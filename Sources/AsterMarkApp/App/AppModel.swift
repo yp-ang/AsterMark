@@ -153,7 +153,10 @@ final class AppModel {
         undoRevision += 1
         let session = AlbumSession(
             folderURL: folder, opened: opened, accessStarted: startedAccess,
-            undoManager: undoManager, store: store, thumbnails: thumbnails, previews: previews
+            undoManager: undoManager, store: store, thumbnails: thumbnails, previews: previews,
+            library: library, tokens: { [weak self] name, date in
+                self?.tokens(fileName: name, captureDate: date) ?? TextTokens(fileName: name, captureDate: date)
+            }
         )
         session.editor.sets = library.sets
         self.session = session
@@ -215,6 +218,7 @@ final class AppModel {
             Task { @MainActor in
                 do {
                     try await self.library.setAlternate(for: watermark.id, from: Self.importableURL(url))
+                    self.session?.reviewAll()
                 } catch {
                     self.report(error, title: "Couldn't add the alternate version")
                 }
@@ -326,6 +330,7 @@ final class AppModel {
 
     func syncSets() {
         session?.editor.sets = library.sets
+        session?.reviewAll()
     }
 
     // MARK: - Errors

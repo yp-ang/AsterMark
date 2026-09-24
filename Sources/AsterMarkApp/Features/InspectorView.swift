@@ -47,6 +47,14 @@ private struct PhotoInspector: View {
                         LabeledContent("Colour", value: profile)
                     }
                 }
+                ForEach((session.reviewIssues[key] ?? []).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { issue in
+                    Label(issue.title, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+                if let rating = session.ratings[key], rating > 0 {
+                    LabeledContent("Rating", value: String(repeating: "★", count: rating))
+                }
                 Toggle("Exclude from export", isOn: Binding(
                     get: { editor.project.edit(for: key).isExcluded },
                     set: { editor.setExcluded($0, for: [key]) }

@@ -43,10 +43,14 @@ struct FilmstripView: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.session = session
         // Read observed state so SwiftUI calls us again when it changes.
-        let keys = session.editor.photos.map(\.relativePath)
-        let current = session.editor.currentIndex
+        let indices = session.visibleIndices
+        let photos = indices.map { session.editor.photos[$0] }
+        let keys = photos.map(\.relativePath)
+        let current = indices.firstIndex(of: session.editor.currentIndex) ?? -1
         let selection = session.selection
         let badges = keys.map(session.badge(for:))
+        coordinator.photos = photos
+        coordinator.albumIndices = indices
         coordinator.update(keys: keys, badges: badges, current: current, selection: selection)
     }
 
@@ -54,6 +58,9 @@ struct FilmstripView: NSViewRepresentable {
     final class Coordinator: NSObject, NSCollectionViewDataSource, NSCollectionViewDelegate {
         var session: AlbumSession
         let thumbnails: PreviewCache
+        /// Photos shown (after filtering) and their indices in the album.
+        var photos: [PhotoRef] = []
+        var albumIndices: [Int] = []
         weak var collectionView: NSCollectionView?
         private var keys: [String] = []
         private var badges: [PhotoBadge] = []
@@ -101,8 +108,8 @@ struct FilmstripView: NSViewRepresentable {
 
         func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
             let item = collectionView.makeItem(withIdentifier: FilmstripItem.identifier, for: indexPath)
-            guard let filmItem = item as? FilmstripItem, session.editor.photos.indices.contains(indexPath.item) else { return item }
-            let photo = session.editor.photos[indexPath.item]
+            guard let filmItem = item as? FilmstripItem, photos.indices.contains(indexPath.item) else { return item }
+            let photo = photos[indexPath.item]
             filmItem.configure(photo: photo, badge: badges[indexPath.item], isCurrent: indexPath.item == current,
                                thumbnails: thumbnails)
             return filmItem
@@ -120,8 +127,8 @@ struct FilmstripView: NSViewRepresentable {
             guard !isApplyingSelection, let collectionView else { return }
             let selectedKeys = Set(collectionView.selectionIndexPaths.map(\.item).filter(keys.indices.contains).map { keys[$0] })
             // The most recently clicked photo becomes the one shown on the canvas.
-            if let index = clicked.map(\.item).max() {
-                session.editor.select(index)
+            if let index = clicked.map(\.item).max(), albumIndices.indices.contains(index) {
+                session.editor.select(albumIndices[index])
             }
             session.selection = selectedKeys
         }
@@ -201,9 +208,11 @@ final class FilmstripItem: NSCollectionViewItem {
         let symbol: String? = switch badge {
         case .none: nil
         case .override: "pin.circle.fill"
+        case .needsReview: "exclamationmark.triangle.fill"
         case .excluded: "nosign"
         }
         badgeView.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
+        badgeView.contentTintColor = badge == .needsReview ? .systemYellow : .white
         thumbnail.alphaValue = badge == .excluded ? 0.4 : 1
     }
 

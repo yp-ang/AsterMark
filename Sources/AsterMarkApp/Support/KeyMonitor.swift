@@ -30,9 +30,15 @@ final class KeyMonitor {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         guard let session = model.session,
               let window = event.window, window.isKeyWindow, window.attachedSheet == nil,
-              !(window.firstResponder is NSText),
-              modifiers.subtracting(.shift).isEmpty
+              !(window.firstResponder is NSText)
         else { return false }
+
+        // ⌘← / ⌘→: previous / next photo needing review.
+        if modifiers == .command, event.specialKey == .rightArrow || event.specialKey == .leftArrow {
+            session.goToNextNeedingReview(forward: event.specialKey == .rightArrow)
+            return true
+        }
+        guard modifiers.subtracting(.shift).isEmpty else { return false }
         let shift = modifiers.contains(.shift)
         let step = shift ? 10.0 : 1.0
         let layerSelected = model.hasSelectedLayer
@@ -82,6 +88,8 @@ final class KeyMonitor {
             session.showWatermarks.toggle()
         case "h":
             session.showHandles.toggle()
+        case "g":
+            session.viewMode = session.viewMode == .grid ? .canvas : .grid
         default:
             return false
         }

@@ -65,12 +65,15 @@ struct MainView: View {
                         systemImage: "photo.badge.exclamationmark",
                         description: Text("AsterMark reads JPEG, PNG and TIFF files. Try including subfolders in the inspector.")
                     )
+                } else if session.viewMode == .grid {
+                    ReviewGridView(session: session)
                 } else {
                     PhotoCanvasView(session: session)
+                    Divider()
+                    FilterBar(session: session)
+                    FilmstripView(session: session, thumbnails: model.thumbnails)
+                        .frame(height: 96)
                 }
-                Divider()
-                FilmstripView(session: session, thumbnails: model.thumbnails)
-                    .frame(height: 96)
             }
         } else {
             EmptyAlbumView(isOpening: model.isOpening)
@@ -84,6 +87,16 @@ struct MainView: View {
                 .disabled((model.session?.editor.currentIndex ?? 0) == 0)
             Button("Next Photo", systemImage: "chevron.right") { model.session?.goToNext() }
                 .disabled(model.session.map { $0.editor.currentIndex >= $0.editor.photos.count - 1 } ?? true)
+        }
+        ToolbarItem(placement: .principal) {
+            if let session = model.session {
+                Picker("View", selection: Binding(get: { session.viewMode }, set: { session.viewMode = $0 })) {
+                    Label("Photo", systemImage: "photo").tag(AlbumViewMode.canvas)
+                    Label("Grid", systemImage: "square.grid.2x2").tag(AlbumViewMode.grid)
+                }
+                .pickerStyle(.segmented)
+                .help("Switch between editing one photo and reviewing all (G)")
+            }
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button("Crop", systemImage: "crop") {}

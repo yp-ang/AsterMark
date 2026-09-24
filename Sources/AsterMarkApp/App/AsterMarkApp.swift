@@ -124,6 +124,15 @@ struct AppCommands: Commands {
                 .disabled(session == nil)
             Button("Previous Photo  ←") { session?.goToPrevious() }
                 .disabled(session == nil)
+            // ⌘← / ⌘→ are handled by KeyMonitor so they keep working as usual inside text fields.
+            Button("Next Needing Review  ⌘→") { session?.goToNextNeedingReview() }
+                .disabled((session?.needsReviewCount ?? 0) == 0)
+            Button("Previous Needing Review  ⌘←") { session?.goToNextNeedingReview(forward: false) }
+                .disabled((session?.needsReviewCount ?? 0) == 0)
+            Button(session?.viewMode == .grid ? "Show Photo  G" : "Show Review Grid  G") {
+                session?.viewMode = session?.viewMode == .grid ? .canvas : .grid
+            }
+            .disabled(session == nil)
             Divider()
             Button("Apply Layout to All Photos") { model.requestApplyToAll() }
                 .keyboardShortcut("d")
