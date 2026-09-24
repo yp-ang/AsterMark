@@ -15,7 +15,7 @@
 - [x] 10.5 `make bench-check` compares preview and export medians against `Benchmarks/baseline.json` and fails beyond +15%. Parallel throughput is reported but not gated (too noisy). The baseline records the Mac model, so record your own with `swift run -c release Benchmarks --count 4 --write-baseline Benchmarks/baseline.json`. It isn't in CI, because GitHub's shared runners vary too much.
 - [ ] 10.6 Instruments sessions (Time Profiler, Allocations/Leaks, Hangs, Core Animation FPS on a 100 MP photo): **manual**, needs Xcode's Instruments. See "Before release".
 - [ ] 10.7 Real-world beta: 3–5 photographers, one full job each. Feedback goes through Help ▸ Report a Problem (GitHub issues) rather than mailto, so no personal address ships in the app. **Manual.**
-- [x] 10.8 MetricKit: hang, crash and launch reports are saved locally to Application Support/AsterMark/Diagnostics (Help ▸ Show Diagnostics Folder). Nothing is uploaded; there's no third-party SDK.
+- [x] 10.8 MetricKit: hang and crash diagnostics are saved locally to Application Support/AsterMark/Diagnostics (Help ▸ Show Diagnostics Folder). Nothing is uploaded; there's no third-party SDK.
 
 ## Exit criteria
 

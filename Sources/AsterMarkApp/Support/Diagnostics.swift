@@ -2,7 +2,8 @@ import AppKit
 import Foundation
 import MetricKit
 
-/// Saves MetricKit reports (hangs, crashes, launch times) to Application Support/AsterMark/Diagnostics.
+/// Saves MetricKit diagnostic reports (hangs, crashes, disk-write and CPU exceptions) to
+/// Application Support/AsterMark/Diagnostics. (Metric payloads don't exist on macOS; diagnostics do.)
 /// Nothing leaves the Mac; attach the files to a bug report if asked.
 // Only holds an immutable folder URL, so sharing it across threads is safe.
 final class Diagnostics: NSObject, MXMetricManagerSubscriber, @unchecked Sendable {
@@ -17,10 +18,6 @@ final class Diagnostics: NSObject, MXMetricManagerSubscriber, @unchecked Sendabl
     func start() {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         MXMetricManager.shared.add(self)
-    }
-
-    func didReceive(_ payloads: [MXMetricPayload]) {
-        for payload in payloads { save(payload.jsonRepresentation(), prefix: "metrics") }
     }
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
