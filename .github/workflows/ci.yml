@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Toolchain
+        run: swift --version
+      - name: Test
+        run: make test
+      - name: Bundle app
+        run: make app
+      - name: Verify signature and sandbox entitlement
+        run: |
+          codesign --verify --strict build/AsterMark.app
+          codesign -d --entitlements - build/AsterMark.app 2>/dev/null | grep -q app-sandbox

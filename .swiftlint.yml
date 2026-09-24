@@ -1,0 +1,13 @@
+included:
+  - Sources
+  - Tests
+excluded:
+  - .build
+  - build
+line_length:
+  warning: 120
+  error: 160
+identifier_name:
+  excluded: [x, y, w, h, r, p, id, ok]
+disabled_rules:
+  - trailing_comma
