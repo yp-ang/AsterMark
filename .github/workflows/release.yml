@@ -12,8 +12,6 @@ permissions:
 jobs:
   release:
     runs-on: macos-15
-    env:
-      KEYCHAIN: ${{ runner.temp }}/release.keychain-db
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,6 +23,8 @@ jobs:
           CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
+          KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"

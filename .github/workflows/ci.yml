@@ -14,7 +14,17 @@ jobs:
           fetch-depth: 0
       - name: Toolchain
         run: swift --version
-      - name: Test with coverage
+      - name: Test
+        run: |
+          set -o pipefail
+          make test 2>&1 | tee test.log
+      - name: Report failing tests as annotations
+        if: failure()
+        run: |
+          grep -E "recorded an issue|Expectation failed|error:" test.log | head -40 | while IFS= read -r line; do
+            echo "::error title=Test failure::${line}"
+          done
+      - name: Coverage
         run: make coverage
       - name: Bundle app
         run: make app
