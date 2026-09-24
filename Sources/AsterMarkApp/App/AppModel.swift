@@ -177,9 +177,9 @@ final class AppModel {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.png, .tiff]
+        panel.allowedContentTypes = Self.watermarkTypes
         panel.prompt = "Import"
-        panel.message = "Choose watermark images. PNGs with transparent backgrounds work best."
+        panel.message = "Choose watermark images. PNGs with transparent backgrounds, PDFs and SVGs work best."
         panel.begin { response in
             guard response == .OK else { return }
             let urls = panel.urls
@@ -187,14 +187,63 @@ final class AppModel {
         }
     }
 
+    static let watermarkTypes: [UTType] = [.png, .tiff, .pdf, .svg]
+
+    static func isWatermarkFile(_ url: URL) -> Bool {
+        guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+        return watermarkTypes.contains { type.conforms(to: $0) }
+    }
+
     func importWatermarks(_ urls: [URL]) async {
         for url in urls {
             do {
-                try await library.importWatermark(from: url)
+                try await library.importWatermark(from: Self.importableURL(url))
             } catch {
                 report(error, title: "Couldn't import “\(url.lastPathComponent)”")
             }
         }
+    }
+
+    /// Asks for a second version of a watermark (e.g. a dark logo for bright photos).
+    func chooseAlternate(for watermark: Watermark) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = Self.watermarkTypes
+        panel.prompt = "Use as Alternate"
+        panel.message = "Choose a version of “\(watermark.name)” for the opposite background. AsterMark picks whichever stands out more on each photo."
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    try await self.library.setAlternate(for: watermark.id, from: Self.importableURL(url))
+                } catch {
+                    self.report(error, title: "Couldn't add the alternate version")
+                }
+            }
+        }
+    }
+
+    /// SVGs are rasterised to a large PNG (via AppKit) so the rest of the pipeline sees a bitmap.
+    static func importableURL(_ url: URL) throws -> URL {
+        guard UTType(filenameExtension: url.pathExtension)?.conforms(to: .svg) == true else { return url }
+        guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else {
+            throw LibraryError.unreadable(url)
+        }
+        let scale = 4096 / max(image.size.width, image.size.height)
+        let size = NSSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { throw LibraryError.unreadable(url) }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let png = rep.representation(using: .png, properties: [:]) else { throw LibraryError.unreadable(url) }
+        let out = FileManager.default.temporaryDirectory
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent)
+            .appendingPathExtension("png")
+        try png.write(to: out, options: .atomic)
+        return out
     }
 
     /// Handles files dropped on the window or Dock icon: folders open as albums, images import as watermarks.
@@ -202,11 +251,7 @@ final class AppModel {
         if let folder = urls.first(where: \.hasDirectoryPath) {
             await open(folder: folder)
         }
-        let images = urls.filter { url in
-            !url.hasDirectoryPath && (UTType(filenameExtension: url.pathExtension).map {
-                $0.conforms(to: .png) || $0.conforms(to: .tiff)
-            } ?? false)
-        }
+        let images = urls.filter { !$0.hasDirectoryPath && Self.isWatermarkFile($0) }
         if !images.isEmpty { await importWatermarks(images) }
     }
 
@@ -237,7 +282,17 @@ final class AppModel {
     var hasSelectedLayer: Bool { selectedLayerContext != nil }
 
     func aspect(of layer: Layer) -> Double {
-        library.watermark(id: layer.watermarkID)?.aspect ?? 1
+        let photo = session?.editor.currentPhoto
+        return library.aspect(of: layer, tokens: tokens(fileName: photo?.fileName ?? "", captureDate: nil),
+                              variant: session?.layerVariants[layer.id] ?? .primary)
+    }
+
+    /// Values for text watermark tokens, from the photographer profile in Settings.
+    func tokens(fileName: String, captureDate: Date?) -> TextTokens {
+        let defaults = UserDefaults.standard
+        return TextTokens(fileName: fileName, captureDate: captureDate,
+                          creator: defaults.string(forKey: "profile.creator") ?? "",
+                          copyright: defaults.string(forKey: "profile.copyright") ?? "")
     }
 
     /// Moves the selected watermark by screen points (converted to photo pixels at the current zoom).

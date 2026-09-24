@@ -1,4 +1,5 @@
 import AsterCore
+import CoreGraphics
 import Foundation
 import Observation
 
@@ -29,6 +30,10 @@ final class AlbumSession {
     @ObservationIgnored var pointsPerPixel: Double = 1
     /// Oriented full-resolution size of the photo on the canvas.
     @ObservationIgnored var currentPhotoSize: CGSize = .zero
+    /// Screen-sized image of the current photo (for contrast checks).
+    var currentPreview: CGImage?
+    /// Which adaptive variant each layer shows on the current photo.
+    var layerVariants: [UUID: VariantChoice] = [:]
 
     @ObservationIgnored private let accessStarted: Bool
     @ObservationIgnored private let store: ProjectStore

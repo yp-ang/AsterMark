@@ -19,19 +19,25 @@ public enum LibraryError: Error, Equatable, LocalizedError {
     }
 }
 
-/// A watermark graphic ready to add to the library: transparent padding trimmed, encoded as PNG.
+/// A watermark graphic ready to add to the library: bitmaps trimmed and encoded as PNG, PDFs kept as vectors.
 public struct PreparedWatermark: Sendable, Hashable {
     public let name: String
-    public let pngData: Data
+    public let data: Data
+    /// "png" or "pdf".
+    public let fileExtension: String
     public let pixelWidth: Int
     public let pixelHeight: Int
     public let contentHash: String
+    public let luminance: Double?
+
+    public var fileName: String { "\(contentHash).\(fileExtension)" }
 }
 
 public enum WatermarkPreparer {
     /// Loads an image, trims fully transparent borders, and encodes it as PNG (colour profile kept).
     /// Pure and thread-safe; run it off the main actor for large files.
     public static func prepare(url: URL, alphaThreshold: UInt8 = 3) throws -> PreparedWatermark {
+        if WatermarkRasterizer.isPDF(url) { return try preparePDF(url: url) }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
         else { throw LibraryError.unreadable(url) }
@@ -50,14 +56,36 @@ public enum WatermarkPreparer {
         guard CGImageDestinationFinalize(destination) else { throw LibraryError.unreadable(url) }
 
         let png = data as Data
-        let hash = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
         return PreparedWatermark(
             name: url.deletingPathExtension().lastPathComponent,
-            pngData: png,
+            data: png,
+            fileExtension: "png",
             pixelWidth: trimmed.width,
             pixelHeight: trimmed.height,
-            contentHash: String(hash.prefix(32))
+            contentHash: hash(png),
+            luminance: Luminance.ofGraphic(trimmed)
         )
+    }
+
+    /// Vector logos stay as PDF and are rasterised at the exact export size.
+    static func preparePDF(url: URL) throws -> PreparedWatermark {
+        guard let size = WatermarkRasterizer.pdfPageSize(url), let data = try? Data(contentsOf: url)
+        else { throw LibraryError.unreadable(url) }
+        guard let raster = WatermarkRasterizer.rasterizePDF(url, maxPixel: 256), let luminance = Luminance.ofGraphic(raster)
+        else { throw LibraryError.emptyWatermark }
+        return PreparedWatermark(
+            name: url.deletingPathExtension().lastPathComponent,
+            data: data,
+            fileExtension: "pdf",
+            pixelWidth: Int(size.width.rounded()),
+            pixelHeight: Int(size.height.rounded()),
+            contentHash: hash(data),
+            luminance: luminance
+        )
+    }
+
+    static func hash(_ data: Data) -> String {
+        String(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined().prefix(32))
     }
 
     /// Bounding box of pixels with alpha above `threshold`, in top-left pixel coordinates.
@@ -123,6 +151,20 @@ public final class WatermarkLibrary {
             sets = index.sets
             defaultWatermarkID = index.defaultWatermarkID
         }
+        backfillLuminance()
+    }
+
+    /// Watermarks imported before luminance was recorded get it computed once.
+    private func backfillLuminance() {
+        var changed = false
+        for index in watermarks.indices where watermarks[index].luminance == nil {
+            let url = fileURL(for: watermarks[index])
+            if let preview = try? ImageLoader().preview(url: url, maxPixel: 128) {
+                watermarks[index].luminance = Luminance.ofGraphic(preview.cgImage)
+                changed = true
+            }
+        }
+        if changed { try? persist() }
     }
 
     // MARK: - Watermarks
@@ -139,21 +181,56 @@ public final class WatermarkLibrary {
     /// Adds a prepared watermark. Importing identical content twice returns the existing entry.
     @discardableResult
     public func add(_ prepared: PreparedWatermark) throws -> Watermark {
-        let fileName = "\(prepared.contentHash).png"
+        let fileName = prepared.fileName
         if let existing = watermarks.first(where: { $0.fileName == fileName }) {
             return existing
         }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try prepared.pngData.write(to: directory.appendingPathComponent(fileName), options: .atomic)
+        try write(prepared)
 
         let watermark = Watermark(
             name: prepared.name, fileName: fileName,
-            pixelWidth: prepared.pixelWidth, pixelHeight: prepared.pixelHeight
+            pixelWidth: prepared.pixelWidth, pixelHeight: prepared.pixelHeight,
+            luminance: prepared.luminance
         )
         watermarks.append(watermark)
         if defaultWatermarkID == nil { defaultWatermarkID = watermark.id }
         try persist()
         return watermark
+    }
+
+    /// Adds a second version for the opposite background (e.g. a dark logo for bright photos).
+    public func setAlternate(for id: UUID, from url: URL) async throws {
+        let prepared = try await Task.detached(priority: .userInitiated) {
+            try WatermarkPreparer.prepare(url: url)
+        }.value
+        guard let index = watermarks.firstIndex(where: { $0.id == id }) else { throw LibraryError.notFound }
+        try write(prepared)
+        watermarks[index].alternate = WatermarkAlternate(
+            fileName: prepared.fileName, pixelWidth: prepared.pixelWidth,
+            pixelHeight: prepared.pixelHeight, luminance: prepared.luminance
+        )
+        try persist()
+    }
+
+    public func removeAlternate(for id: UUID) throws {
+        guard let index = watermarks.firstIndex(where: { $0.id == id }) else { throw LibraryError.notFound }
+        if let old = watermarks[index].alternate, !isReferenced(old.fileName, excluding: id) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(old.fileName))
+        }
+        watermarks[index].alternate = nil
+        try persist()
+    }
+
+    private func write(_ prepared: PreparedWatermark) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(prepared.fileName)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try prepared.data.write(to: url, options: .atomic)
+        }
+    }
+
+    private func isReferenced(_ fileName: String, excluding id: UUID) -> Bool {
+        watermarks.contains { $0.id != id && ($0.fileName == fileName || $0.alternate?.fileName == fileName) }
     }
 
     public func watermark(id: UUID) -> Watermark? {
@@ -181,8 +258,9 @@ public final class WatermarkLibrary {
     public func remove(id: UUID) throws {
         guard let index = watermarks.firstIndex(where: { $0.id == id }) else { throw LibraryError.notFound }
         let removed = watermarks.remove(at: index)
-        if !watermarks.contains(where: { $0.fileName == removed.fileName }) {
-            try? FileManager.default.removeItem(at: fileURL(for: removed))
+        for file in [removed.fileName, removed.alternate?.fileName].compactMap({ $0 })
+            where !isReferenced(file, excluding: removed.id) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(file))
         }
         for i in sets.indices {
             sets[i].layers.removeAll { $0.watermarkID == id }
@@ -191,18 +269,83 @@ public final class WatermarkLibrary {
         try persist()
     }
 
-    /// Loads a watermark's bitmap for compositing.
-    public func image(for id: UUID) throws -> WatermarkImage {
+    /// Loads a watermark's bitmap for compositing (PDFs are rasterised at `width`).
+    public func image(for id: UUID, variant: VariantChoice = .primary, width: Int? = nil) throws -> WatermarkImage {
         guard let watermark = watermark(id: id) else { throw LibraryError.notFound }
-        return try WatermarkImage(url: fileURL(for: watermark))
+        let fileName = variant == .alternate ? (watermark.alternate?.fileName ?? watermark.fileName) : watermark.fileName
+        let url = directory.appendingPathComponent(fileName)
+        if WatermarkRasterizer.isPDF(url) {
+            guard let raster = WatermarkRasterizer.rasterizePDF(url, maxPixel: max(width ?? 2048, 16))
+            else { throw LibraryError.unreadable(url) }
+            return WatermarkImage(cgImage: raster)
+        }
+        return try WatermarkImage(url: url)
     }
 
-    /// Converts visible model layers into renderable layers, skipping ones whose watermark is gone.
-    public func renderLayers(_ layers: [Layer]) -> [WatermarkLayer] {
-        layers.filter(\.isVisible).compactMap { layer in
-            guard let image = try? image(for: layer.watermarkID) else { return nil }
-            return WatermarkLayer(watermark: image, placement: layer.placement, blend: layer.blend)
+    /// File for the variant a layer shows on a photo whose brightness under the layer is `background`.
+    public func resolvedVariant(for layer: Layer, background: Double?) -> VariantChoice {
+        guard let watermark = watermark(id: layer.watermarkID), let alternate = watermark.alternate else { return .primary }
+        return Luminance.choose(layer.variant, primary: watermark.luminance, alternate: alternate.luminance,
+                                background: background)
+    }
+
+    public func fileURL(for watermark: Watermark, variant: VariantChoice) -> URL {
+        let name = variant == .alternate ? (watermark.alternate?.fileName ?? watermark.fileName) : watermark.fileName
+        return directory.appendingPathComponent(name)
+    }
+
+    /// Width / height of what a layer draws (text is measured; graphics use the chosen variant).
+    public func aspect(of layer: Layer, tokens: TextTokens, variant: VariantChoice = .primary) -> Double {
+        if let text = layer.text { return TextRenderer.aspect(text, tokens: tokens) ?? 4 }
+        guard let watermark = watermark(id: layer.watermarkID) else { return 1 }
+        if variant == .alternate, let alt = watermark.alternate {
+            return Double(alt.pixelWidth) / Double(max(alt.pixelHeight, 1))
         }
+        return watermark.aspect
+    }
+
+    /// Luminance of what a layer draws, for contrast checks.
+    public func luminance(of layer: Layer, variant: VariantChoice) -> Double? {
+        if let text = layer.text { return text.luminance }
+        guard let watermark = watermark(id: layer.watermarkID) else { return nil }
+        return variant == .alternate ? watermark.alternate?.luminance : watermark.luminance
+    }
+
+    /// Converts visible model layers into renderable layers for one photo.
+    /// - Parameters:
+    ///   - frame: output frame in pixels (after crop and resize), so vectors and text render sharp.
+    ///   - background: a small preview of the (cropped) photo, for adaptive variants.
+    public func renderLayers(
+        _ layers: [Layer],
+        frame: CGSize = CGSize(width: 2048, height: 2048),
+        tokens: TextTokens = TextTokens(),
+        background: CGImage? = nil
+    ) -> [WatermarkLayer] {
+        let shortEdge = min(frame.width, frame.height)
+        return layers.filter(\.isVisible).compactMap { layer in
+            let targetWidth = max(Int((layer.placement.width * shortEdge).rounded(.up)), 16)
+            let image: WatermarkImage
+            if let text = layer.text {
+                guard let cg = TextRenderer.image(text, tokens: tokens, width: targetWidth) else { return nil }
+                image = WatermarkImage(cgImage: cg)
+            } else {
+                let region = layer.tile == nil
+                    ? Self.normalizedRegion(of: layer, frame: frame, aspect: aspect(of: layer, tokens: tokens))
+                    : .full
+                let variant = resolvedVariant(for: layer, background: background.map { Luminance.mean(of: $0, in: region) })
+                guard let loaded = try? self.image(for: layer.watermarkID, variant: variant, width: targetWidth) else { return nil }
+                image = loaded
+            }
+            return WatermarkLayer(watermark: image, placement: layer.placement, blend: layer.blend,
+                                  shadow: layer.shadow, tile: layer.tile)
+        }
+    }
+
+    /// The layer's rect as a unit rect of the frame (for sampling the photo under it).
+    public static func normalizedRegion(of layer: Layer, frame: CGSize, aspect: Double) -> NormalizedRect {
+        let rect = layer.placement.rect(in: frame, watermarkAspect: aspect)
+        return NormalizedRect(x: rect.minX / frame.width, y: rect.minY / frame.height,
+                              width: rect.width / frame.width, height: rect.height / frame.height)
     }
 
     // MARK: - Sets

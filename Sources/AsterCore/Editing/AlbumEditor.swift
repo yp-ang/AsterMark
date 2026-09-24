@@ -156,39 +156,57 @@ public final class AlbumEditor {
     /// one, otherwise to the album default (so it appears on every photo). On an output target it
     /// goes to that photo's output layout.
     public func addLayer(_ layer: Layer, for key: String?) {
-        change("Add Watermark") { project in
-            let recipe = currentRecipe
-            switch target {
-            case .master:
-                if let key, var layers = project.storedLayers(for: key, target: .master) {
-                    layers.append(layer)
-                    project.setStoredLayers(layers, for: key, target: .master)
-                } else {
-                    project.defaultLayers.append(layer)
-                }
-            case .output:
-                guard let key else { return }
-                let layers = project.effectiveLayers(for: key, recipe: recipe, sets: sets) + [layer]
-                project.setStoredLayers(layers, for: key, target: target)
-            }
-        }
+        mutateLayers(for: key, actionName: layer.isText ? "Add Text" : "Add Watermark") { $0.append(layer) }
     }
 
     /// Removes a layer from wherever the photo's shown layout comes from (mirrors `addLayer`).
     public func removeLayer(_ layerID: UUID, for key: String?) {
-        change("Remove Watermark") { project in
+        mutateLayers(for: key, actionName: "Remove Watermark") { $0.removeAll { $0.id == layerID } }
+    }
+
+    /// Adds a copy of a layer, nudged so it's visible, directly above the original.
+    @discardableResult
+    public func duplicateLayer(_ layerID: UUID, for key: String?) -> UUID? {
+        var newID: UUID?
+        mutateLayers(for: key, actionName: "Duplicate Watermark") { layers in
+            guard let index = layers.firstIndex(where: { $0.id == layerID }) else { return }
+            var copy = layers[index]
+            copy.id = UUID()
+            copy.placement.marginY += copy.placement.anchor.unitY == 1 ? 0.06 : -0.06
+            layers.insert(copy, at: index + 1)
+            newID = copy.id
+        }
+        return newID
+    }
+
+    /// Moves a layer up (`+1`, towards the front) or down (`-1`) in the stack.
+    public func reorderLayer(_ layerID: UUID, for key: String?, by offset: Int) {
+        mutateLayers(for: key, actionName: offset > 0 ? "Bring Forward" : "Send Backward") { layers in
+            guard let index = layers.firstIndex(where: { $0.id == layerID }) else { return }
+            let target = min(max(index + offset, 0), layers.count - 1)
+            guard target != index else { return }
+            layers.insert(layers.remove(at: index), at: target)
+        }
+    }
+
+    /// Applies a structural change to the layers a photo shows, at the right level:
+    /// the photo's own layout if it has one, else the album default (master) or the photo's
+    /// output layout (output target).
+    private func mutateLayers(for key: String?, actionName: String, _ body: (inout [Layer]) -> Void) {
+        change(actionName) { project in
             let recipe = currentRecipe
             switch target {
             case .master:
                 if let key, var layers = project.storedLayers(for: key, target: .master) {
-                    layers.removeAll { $0.id == layerID }
+                    body(&layers)
                     project.setStoredLayers(layers, for: key, target: .master)
                 } else {
-                    project.defaultLayers.removeAll { $0.id == layerID }
+                    body(&project.defaultLayers)
                 }
             case .output:
                 guard let key else { return }
-                let layers = project.effectiveLayers(for: key, recipe: recipe, sets: sets).filter { $0.id != layerID }
+                var layers = project.effectiveLayers(for: key, recipe: recipe, sets: sets)
+                body(&layers)
                 project.setStoredLayers(layers, for: key, target: target)
             }
         }

@@ -26,7 +26,7 @@ struct LibraryTests {
         #expect(prepared.name == "Logo")
 
         let out = dir.appendingPathComponent("trimmed.png")
-        try prepared.pngData.write(to: out)
+        try prepared.data.write(to: out)
         let image = try #require(Fixtures.loadCGImage(out))
         #expect(Fixtures.pixel(image, x: 0, y: 0).isClose(to: .green))
         #expect(Fixtures.pixel(image, x: 74, y: 39).isClose(to: .red))

@@ -12,10 +12,14 @@ struct CanvasLayerModel: Equatable {
     var aspect: Double
     var image: CGImage?
     var name: String
+    var shadow: LayerShadow?
+    /// Tiled watermarks arrive pre-rendered for the whole frame and aren't dragged.
+    var fillsFrame = false
 
     static func == (a: CanvasLayerModel, b: CanvasLayerModel) -> Bool {
         a.id == b.id && a.placement == b.placement && a.blend == b.blend && a.isVisible == b.isVisible
             && a.isLocked == b.isLocked && a.aspect == b.aspect && a.image === b.image && a.name == b.name
+            && a.shadow == b.shadow && a.fillsFrame == b.fillsFrame
     }
 }
 
@@ -187,27 +191,56 @@ final class CanvasView: NSView {
                 watermarkLayers[id] = nil
             }
             for (index, model) in layers.enumerated() {
-                let layer = watermarkLayers[model.id] ?? makeWatermarkLayer(model.id)
-                layer.contents = model.image
-                layer.opacity = Float(model.placement.opacity)
-                layer.isHidden = !model.isVisible || !showWatermarks
-                layer.compositingFilter = model.blend.compositingFilterName
-                layer.zPosition = CGFloat(index + 1)
-                apply(geometry(for: model), to: layer)
+                let container = watermarkLayers[model.id] ?? makeWatermarkLayer(model.id)
+                let image = container.sublayers?.first
+                image?.contents = model.image
+                // Tile images already include opacity; the container blends the whole layer with the photo.
+                container.opacity = model.fillsFrame ? 1 : Float(model.placement.opacity)
+                container.isHidden = !model.isVisible || !showWatermarks
+                container.compositingFilter = model.blend.compositingFilterName
+                container.zPosition = CGFloat(index + 1)
+                if model.fillsFrame {
+                    container.bounds = CGRect(origin: .zero, size: imageRect.size)
+                    container.position = CGPoint(x: imageRect.midX, y: imageRect.midY)
+                    image?.frame = container.bounds
+                    image?.transform = CATransform3DIdentity
+                } else {
+                    apply(geometry(for: model), to: container)
+                }
+                applyShadow(model, to: container)
             }
             updateOverlay()
         }
         updateAccessibilityChildren()
     }
 
+    /// Each watermark is an unrotated container (position, opacity, blend, shadow) holding the
+    /// rotated image, so the shadow always falls downwards like the exporter's.
     private func makeWatermarkLayer(_ id: UUID) -> CALayer {
-        let layer = CALayer()
-        layer.actions = Self.noActions
-        layer.contentsGravity = .resize
-        layer.minificationFilter = .trilinear
-        contentLayer.addSublayer(layer)
-        watermarkLayers[id] = layer
-        return layer
+        let container = CALayer()
+        container.actions = Self.noActions
+        let image = CALayer()
+        image.actions = Self.noActions
+        image.contentsGravity = .resize
+        image.minificationFilter = .trilinear
+        container.addSublayer(image)
+        contentLayer.addSublayer(container)
+        watermarkLayers[id] = container
+        return container
+    }
+
+    private func applyShadow(_ model: CanvasLayerModel, to container: CALayer) {
+        guard let shadow = model.shadow else {
+            container.shadowOpacity = 0
+            return
+        }
+        let height = model.fillsFrame
+            ? model.placement.rect(in: imageRect.size, watermarkAspect: model.aspect).height
+            : geometry(for: model).rect.height
+        container.shadowColor = NSColor.black.cgColor
+        container.shadowOpacity = Float(shadow.opacity)
+        container.shadowRadius = shadow.radius * height
+        container.shadowOffset = CGSize(width: 0, height: shadow.offset * height) // positive = down (flipped)
     }
 
     /// Unrotated rect (image-local points) and rotation for a layer, honouring any live gesture.
@@ -216,11 +249,15 @@ final class CanvasView: NSView {
         return (model.placement.rect(in: imageRect.size, watermarkAspect: model.aspect), model.placement.rotation)
     }
 
-    private func apply(_ geometry: (rect: CGRect, rotation: Double), to layer: CALayer) {
+    private func apply(_ geometry: (rect: CGRect, rotation: Double), to container: CALayer) {
         let g = CanvasGeometry.layerGeometry(rect: geometry.rect, rotation: geometry.rotation, imageRect: imageRect)
-        layer.bounds = g.bounds
-        layer.position = g.position
-        layer.transform = CATransform3DMakeRotation(g.rotation, 0, 0, 1)
+        container.bounds = g.bounds
+        container.position = g.position
+        container.transform = CATransform3DIdentity
+        guard let image = container.sublayers?.first else { return }
+        image.bounds = g.bounds
+        image.position = CGPoint(x: g.bounds.midX, y: g.bounds.midY)
+        image.transform = CATransform3DMakeRotation(g.rotation, 0, 0, 1)
     }
 
     /// The rotated rect of a layer in view (y-down) space.
@@ -232,7 +269,7 @@ final class CanvasView: NSView {
     // MARK: Overlay (selection, handles, guides)
 
     private var selectedModel: CanvasLayerModel? {
-        layers.first { $0.id == selectedID && $0.isVisible }
+        layers.first { $0.id == selectedID && $0.isVisible && !$0.fillsFrame }
     }
 
     private func updateOverlay(guides: [SnapGuide] = []) {
@@ -301,7 +338,7 @@ final class CanvasView: NSView {
             }
         }
         guard showWatermarks else { return .empty }
-        for model in layers.reversed() where model.isVisible {
+        for model in layers.reversed() where model.isVisible && !model.fillsFrame {
             if viewRect(for: model).contains(point, tolerance: 2) { return .layer(model.id) }
         }
         return .empty

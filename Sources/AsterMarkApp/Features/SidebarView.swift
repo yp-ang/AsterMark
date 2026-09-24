@@ -103,6 +103,15 @@ struct SidebarView: View {
                     WatermarkThumbnail(watermark: watermark)
                     Text(watermark.name).lineLimit(1)
                     Spacer()
+                    if watermark.alternate != nil {
+                        Image(systemName: "circle.lefthalf.filled")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .help("Has light and dark versions")
+                    }
+                    if watermark.isVector {
+                        Text("PDF").font(.caption2).foregroundStyle(.secondary)
+                    }
                     if model.library.defaultWatermarkID == watermark.id {
                         Image(systemName: "star.fill")
                             .font(.caption2)
@@ -119,6 +128,15 @@ struct SidebarView: View {
                         .disabled(model.session?.editor.currentPhoto == nil)
                     Button("Rename…") { rename = RenameRequest(kind: .watermark, targetID: watermark.id, name: watermark.name) }
                     Button("Set as Default") { try? model.library.setDefault(id: watermark.id) }
+                    Divider()
+                    if watermark.alternate == nil {
+                        Button("Add Version for \((watermark.luminance ?? 1) > 0.5 ? "Bright" : "Dark") Photos…") {
+                            model.chooseAlternate(for: watermark)
+                        }
+                    } else {
+                        Button("Replace Alternate Version…") { model.chooseAlternate(for: watermark) }
+                        Button("Remove Alternate Version") { try? model.library.removeAlternate(for: watermark.id) }
+                    }
                     Divider()
                     Button("Delete…", role: .destructive) { watermarkToDelete = watermark }
                 }

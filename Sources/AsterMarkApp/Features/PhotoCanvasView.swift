@@ -25,7 +25,8 @@ struct PhotoCanvasView: View {
     let session: AlbumSession
 
     @State private var preview: PreviewImage?
-    @State private var watermarkImages: [UUID: CGImage] = [:]
+    @State private var rendered: [UUID: LayerRender] = [:]
+    @State private var captureDate: Date?
     @State private var neededPixels = AlbumSession.previewPixels
     @State private var isDropTargeted = false
 
@@ -60,7 +61,7 @@ struct PhotoCanvasView: View {
         .task(id: ResolutionRequest(url: session.editor.currentPhoto?.url, bucket: resolutionBucket)) {
             await loadSharperPreview()
         }
-        .task(id: watermarkIDs) { await loadWatermarkImages() }
+        .task(id: renderInputs) { await renderLayers() }
     }
 
     // MARK: - Layers
@@ -72,20 +73,31 @@ struct PhotoCanvasView: View {
         return session.editor.layers(for: key)
     }
 
-    private var watermarkIDs: Set<UUID> { Set(currentLayers.map(\.watermarkID)) }
+    private var tokens: TextTokens {
+        model.tokens(fileName: session.editor.currentPhoto?.fileName ?? "", captureDate: captureDate)
+    }
+
+    private var renderInputs: RenderInputs {
+        RenderInputs(layers: currentLayers, url: preview == nil ? nil : session.editor.currentPhoto?.url,
+                     previewSize: preview?.pixelSize ?? .zero, tokens: tokens, library: model.library.watermarks)
+    }
 
     private var canvasLayers: [CanvasLayerModel] {
         currentLayers.map { layer in
             let watermark = model.library.watermark(id: layer.watermarkID)
+            let render = rendered[layer.id]
+            let name = layer.text.map { tokens.expand($0.string) } ?? watermark?.name ?? "Missing watermark"
             return CanvasLayerModel(
                 id: layer.id,
                 placement: layer.placement,
                 blend: layer.blend,
-                isVisible: layer.isVisible && watermark != nil,
-                isLocked: false,
-                aspect: watermark?.aspect ?? 1,
-                image: watermarkImages[layer.watermarkID],
-                name: watermark?.name ?? "Missing watermark"
+                isVisible: layer.isVisible && (layer.isText || watermark != nil),
+                isLocked: layer.isLocked,
+                aspect: render?.aspect ?? model.library.aspect(of: layer, tokens: tokens),
+                image: render?.image,
+                name: name,
+                shadow: layer.tile == nil ? layer.shadow : nil,
+                fillsFrame: layer.tile != nil
             )
         }
     }
@@ -115,10 +127,12 @@ struct PhotoCanvasView: View {
     private func loadPreview() async {
         neededPixels = AlbumSession.previewPixels
         guard let url = session.editor.currentPhoto?.url else { preview = nil; return }
+        captureDate = (try? ImageSourceInfo(url: url))?.captureDate
         do {
             let image = try await model.previews.image(for: url, maxPixel: AlbumSession.previewPixels)
             preview = image
             session.currentPhotoSize = image.originalSize
+            session.currentPreview = image.cgImage
         } catch {
             preview = nil
             log.error("Preview failed: \(error.localizedDescription, privacy: .public)")
@@ -140,14 +154,55 @@ struct PhotoCanvasView: View {
         }
     }
 
-    private func loadWatermarkImages() async {
-        var images: [UUID: CGImage] = [:]
-        for id in watermarkIDs {
-            guard let watermark = model.library.watermark(id: id) else { continue }
-            images[id] = try? await model.previews.image(for: model.library.fileURL(for: watermark), maxPixel: 1024).cgImage
+    /// Builds the bitmap each layer shows on this photo: text at the right size, the adaptive
+    /// variant chosen from the photo under it, and tiles pre-rendered for the whole frame.
+    private func renderLayers() async {
+        guard let preview else { rendered = [:]; return }
+        let library = model.library
+        let frame = preview.pixelSize
+        let tokens = tokens
+        var result: [UUID: LayerRender] = [:]
+
+        for layer in currentLayers {
+            if layer.tile != nil {
+                let renderable = library.renderLayers([layer], frame: frame, tokens: tokens, background: preview.cgImage)
+                let image = await Task.detached(priority: .userInitiated) {
+                    let base = CIImage(color: .clear).cropped(to: CGRect(origin: .zero, size: frame))
+                    let composite = Compositor.render(base: base, layers: renderable, spec: RenderSpec())
+                    return try? RenderContext.shared.makeCGImage(composite, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+                }.value
+                result[layer.id] = LayerRender(image: image, aspect: library.aspect(of: layer, tokens: tokens), variant: .primary)
+            } else if let text = layer.text {
+                let width = max(Int(layer.placement.width * min(frame.width, frame.height)), 16)
+                result[layer.id] = LayerRender(image: TextRenderer.image(text, tokens: tokens, width: width),
+                                               aspect: TextRenderer.aspect(text, tokens: tokens) ?? 4, variant: .primary)
+            } else if let watermark = library.watermark(id: layer.watermarkID) {
+                let region = WatermarkLibrary.normalizedRegion(of: layer, frame: frame, aspect: watermark.aspect)
+                let variant = library.resolvedVariant(for: layer, background: Luminance.mean(of: preview.cgImage, in: region))
+                let url = library.fileURL(for: watermark, variant: variant)
+                let image = try? await model.previews.image(for: url, maxPixel: 1024).cgImage
+                result[layer.id] = LayerRender(image: image, aspect: library.aspect(of: layer, tokens: tokens, variant: variant),
+                                               variant: variant)
+            }
         }
-        watermarkImages = images
+        guard !Task.isCancelled else { return }
+        rendered = result
+        session.layerVariants = result.mapValues(\.variant)
     }
+}
+
+private struct LayerRender {
+    let image: CGImage?
+    let aspect: Double
+    let variant: VariantChoice
+}
+
+private struct RenderInputs: Hashable {
+    let layers: [Layer]
+    let url: URL?
+    let previewSize: CGSize
+    let tokens: TextTokens
+    let library: [Watermark]
 }
 
 private struct ResolutionRequest: Hashable {

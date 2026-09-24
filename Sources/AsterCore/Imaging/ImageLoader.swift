@@ -34,6 +34,13 @@ public struct ImageLoader: PreviewLoading {
     /// Decodes a downsampled, orientation-corrected image whose long edge is at most `maxPixel`.
     /// Much faster than a full decode: ImageIO decodes JPEG at reduced scale directly.
     public func preview(url: URL, maxPixel: Int) throws -> PreviewImage {
+        // Vector watermarks (PDF) are drawn at the requested size.
+        if WatermarkRasterizer.isPDF(url) {
+            guard let size = WatermarkRasterizer.pdfPageSize(url),
+                  let image = WatermarkRasterizer.rasterizePDF(url, maxPixel: maxPixel)
+            else { throw ImagingError.decodeFailed(url) }
+            return PreviewImage(cgImage: image, originalSize: size)
+        }
         let info = try ImageSourceInfo(url: url)
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
         else { throw ImagingError.unreadable(url) }

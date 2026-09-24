@@ -59,11 +59,22 @@ public struct WatermarkLayer: Sendable {
     public var watermark: WatermarkImage
     public var placement: Placement
     public var blend: BlendMode
+    public var shadow: LayerShadow?
+    /// When set, the watermark repeats across the whole frame; anchor and margins are ignored.
+    public var tile: TileSpec?
 
-    public init(watermark: WatermarkImage, placement: Placement, blend: BlendMode = .normal) {
+    public init(
+        watermark: WatermarkImage,
+        placement: Placement,
+        blend: BlendMode = .normal,
+        shadow: LayerShadow? = nil,
+        tile: TileSpec? = nil
+    ) {
         self.watermark = watermark
         self.placement = placement
         self.blend = blend
+        self.shadow = shadow
+        self.tile = tile
     }
 }
 
@@ -114,7 +125,12 @@ public enum Compositor {
 
         let frame = image.extent.size
         for layer in layers {
-            let layerImage = placedLayer(layer, in: frame)
+            var layerImage = layer.tile.map { tiledLayer(layer, tile: $0, in: frame) } ?? placedLayer(layer, in: frame)
+            if let shadow = layer.shadow {
+                let height = layer.placement.rect(in: frame, watermarkAspect: layer.watermark.aspect).height
+                layerImage = layerImage.composited(over: shadowImage(of: layerImage, shadow: shadow, layerHeight: height))
+            }
+            layerImage = layerImage.cropped(to: CGRect(origin: .zero, size: frame))
             if let filterName = layer.blend.filterName {
                 image = layerImage.applyingFilter(filterName, parameters: [kCIInputBackgroundImageKey: image])
             } else {
@@ -146,6 +162,47 @@ public enum Compositor {
                 kCIInputAspectRatioKey: aspectRatio,
             ])
             .cropped(to: CGRect(origin: .zero, size: size))
+    }
+
+    /// A soft black shadow cast straight down (world space, so it ignores the layer's rotation).
+    static func shadowImage(of image: CIImage, shadow: LayerShadow, layerHeight: CGFloat) -> CIImage {
+        let zero = CIVector(x: 0, y: 0, z: 0, w: 0)
+        return image
+            .applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": zero, "inputGVector": zero, "inputBVector": zero,
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: min(max(shadow.opacity, 0), 1)),
+            ])
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: max(shadow.radius * layerHeight, 0)])
+            .transformed(by: CGAffineTransform(translationX: 0, y: -shadow.offset * layerHeight))
+    }
+
+    /// The watermark repeated over the frame at the placement's size, rotated about the frame centre.
+    static func tiledLayer(_ layer: WatermarkLayer, tile: TileSpec, in frame: CGSize) -> CIImage {
+        let wm = layer.watermark
+        let rect = layer.placement.rect(in: frame, watermarkAspect: wm.aspect)
+        let scale = rect.width / wm.size.width
+        var mark = scale < 1
+            ? wm.image.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0])
+            : wm.image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let opacity = min(max(layer.placement.opacity, 0), 1)
+        if opacity < 1 {
+            mark = mark.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: opacity)])
+        }
+        let gap = max(tile.spacing, 0)
+        let cell = CGRect(x: 0, y: 0, width: rect.width * (1 + gap), height: rect.height * (1 + gap))
+        let centred = mark.transformed(by: CGAffineTransform(
+            translationX: (cell.width - mark.extent.width) / 2 - mark.extent.minX,
+            y: (cell.height - mark.extent.height) / 2 - mark.extent.minY
+        ))
+        let cellImage = centred.composited(over: CIImage(color: .clear).cropped(to: cell)).cropped(to: cell)
+
+        let center = CGPoint(x: frame.width / 2, y: frame.height / 2)
+        let rotation = CGAffineTransform(translationX: -center.x, y: -center.y)
+            .concatenating(CGAffineTransform(rotationAngle: -tile.angle))
+            .concatenating(CGAffineTransform(translationX: center.x, y: center.y))
+        return cellImage
+            .applyingFilter("CIAffineTile", parameters: [kCIInputTransformKey: NSAffineTransform()])
+            .transformed(by: rotation)
     }
 
     /// The watermark scaled, rotated, faded and positioned in the frame's Core Image space.
