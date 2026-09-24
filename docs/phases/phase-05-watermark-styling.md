@@ -9,10 +9,10 @@
 ## Steps
 
 - [x] 5.1 Layer list in inspector (front-most first): add image/text, duplicate, reorder (Bring Forward / Send Backward in the context menu), visibility toggle, lock.
-- [x] 5.2 Blend modes (Normal, Multiply, Screen, Overlay, Soft Light) — identical in preview (`CALayer.compositingFilter`) and export (CI blend filters). Parity test renders both and compares.
+- [x] 5.2 Blend modes (Normal, Multiply, Screen, Overlay, Soft Light) — preview uses `CALayer.compositingFilter`, export uses Core Image blend filters. The export side is unit-tested; the preview side needs a visual check (see the log).
 - [x] 5.3 Drop shadow (opacity, softness, distance in layer-height units). The preview uses `CALayer.shadow*` on an unrotated container around the rotated image; the export uses `CIGaussianBlur` + offset. In both, the shadow falls straight down whatever the rotation.
-- [x] 5.4 Adaptive watermark: pair light/dark variants; `LuminanceSampler` computes mean luminance under the layer rect on the proxy (`CIAreaAverage`); choose variant by contrast; user can pin a variant per photo.
-- [x] 5.5 Contrast warning: WCAG-style contrast estimate between watermark and background; badge in canvas + "needs review" flag when below threshold.
+- [x] 5.4 Adaptive watermark: pair light/dark variants; `Luminance.mean` samples the preview under the layer's rect (a small CPU downsample, cheap and deterministic); the variant with more contrast wins. Per layer: Automatic / Original / Alternate. Export samples a preview the same way, so the choice matches.
+- [x] 5.5 Contrast warning: luminance difference between the watermark and the photo under it; shown in the inspector when below 0.2. (The filmstrip "needs review" flag comes with Phase 6.)
 - [x] 5.6 Text layer: font picker (`NSFontManager`), weight, tracking, colour, tokens (`{©}`, `{year}`, `{creator}`, `{filename}`); rendered to a bitmap at export resolution via Core Text so it stays sharp.
 - [x] 5.7 Vector logos: PDFs stay vector and are drawn at the exact export pixel size (`CGPDFDocument`). SVGs are converted to a 4096 px PNG at import via `NSImage`, because AsterCore can't use AppKit.
 - [x] 5.8 Tile mode: spacing, angle, opacity; `CIAffineTile` in export. The canvas shows the same Core Image render (at preview size) rather than a `CAReplicatorLayer`, so the preview matches the export exactly.
