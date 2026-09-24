@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Observation
 
@@ -92,6 +93,30 @@ public final class AlbumEditor {
         guard let index = layers.firstIndex(where: { $0.id == layerID }) else { return }
         body(&layers[index])
         setLayers(layers, for: [key], actionName: actionName)
+    }
+
+    public func setPlacement(_ placement: Placement, layer layerID: UUID, for key: String,
+                             actionName: String = "Move Watermark") {
+        updateLayer(layerID, for: key, actionName: actionName) { $0.placement = placement }
+    }
+
+    /// Nudges a layer by `delta` in the same units as `frame` (e.g. photo pixels), keeping its anchor.
+    public func moveLayer(_ layerID: UUID, for key: String, by delta: CGVector, frame: CGSize, aspect: Double) {
+        guard let layer = layers(for: key).first(where: { $0.id == layerID }) else { return }
+        let p = layer.placement
+        let rect = p.rect(in: frame, watermarkAspect: aspect).offsetBy(dx: delta.dx, dy: delta.dy)
+        let moved = Placement.from(rect: rect, in: frame, anchor: p.anchor, rotation: p.rotation, opacity: p.opacity)
+        setPlacement(moved, layer: layerID, for: key, actionName: "Nudge Watermark")
+    }
+
+    /// Snaps a layer to one of the nine anchor positions with standard margins.
+    public func setAnchor(_ anchor: Anchor, layer layerID: UUID, for key: String,
+                          margin: Double = SnapEngine.defaultMargin) {
+        updateLayer(layerID, for: key, actionName: "Position Watermark") { layer in
+            layer.placement.anchor = anchor
+            layer.placement.marginX = anchor.unitX == 0.5 ? 0 : margin
+            layer.placement.marginY = anchor.unitY == 0.5 ? 0 : margin
+        }
     }
 
     /// Makes `layers` the default. On the master target it becomes the album default; on an

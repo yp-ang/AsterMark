@@ -96,6 +96,28 @@ struct AppCommands: Commands {
             .disabled(!model.undoManager.canRedo)
         }
 
+        CommandGroup(after: .toolbar) {
+            let session = model.session
+            Button("Zoom to Fit") { session?.zoomToFit() }
+                .keyboardShortcut("0")
+            Button("Actual Size") { session?.zoomToActualSize() }
+                .keyboardShortcut("1")
+            Button("Zoom In") { session?.zoomIn() }
+                .keyboardShortcut("=")
+            Button("Zoom Out") { session?.zoomOut() }
+                .keyboardShortcut("-")
+            Divider()
+            Button(session?.showWatermarks == false ? "Show Watermarks  \\" : "Hide Watermarks  \\") {
+                session?.showWatermarks.toggle()
+            }
+            .disabled(session == nil)
+            Button(session?.showHandles == false ? "Show Handles  H" : "Hide Handles  H") {
+                session?.showHandles.toggle()
+            }
+            .disabled(session == nil)
+            Divider()
+        }
+
         CommandMenu("Photo") {
             let session = model.session
             Button("Next Photo  →") { session?.goToNext() }

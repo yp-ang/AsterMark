@@ -1,3 +1,4 @@
+import AppKit
 import AsterCore
 import SwiftUI
 
@@ -8,76 +9,116 @@ enum CanvasBackground: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
 
-    var color: Color {
+    var nsColor: NSColor {
         switch self {
-        case .grey: Color(white: 0.18)
+        case .grey: NSColor(white: 0.18, alpha: 1)
         case .black: .black
-        case .white: Color(white: 0.96)
+        case .white: NSColor(white: 0.96, alpha: 1)
         }
     }
 }
 
-/// Shows the current photo with its watermark layers. Read-only for now; drag, resize and
-/// rotate arrive with the Core Animation canvas in Phase 4.
+/// Loads the current photo and watermark bitmaps, and hosts the interactive `CanvasView`.
 struct PhotoCanvasView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("canvasBackground") private var background = CanvasBackground.grey
     let session: AlbumSession
 
     @State private var preview: PreviewImage?
+    @State private var watermarkImages: [UUID: CGImage] = [:]
+    @State private var neededPixels = AlbumSession.previewPixels
     @State private var isDropTargeted = false
 
     var body: some View {
-        GeometryReader { geometry in
-            let frame = fittedSize(in: geometry.size)
-            ZStack {
-                background.color
-                if let preview, let frame {
-                    ZStack(alignment: .topLeading) {
-                        Image(decorative: preview.cgImage, scale: 1)
-                            .resizable()
-                            .frame(width: frame.width, height: frame.height)
-                        ForEach(visibleLayers) { layer in
-                            WatermarkOverlay(layer: layer, frame: frame)
-                        }
+        ZStack {
+            InteractiveCanvas(
+                session: session,
+                photo: preview?.cgImage,
+                photoSize: preview?.originalSize ?? .zero,
+                layers: canvasLayers,
+                canvasColor: background.nsColor,
+                onNeedsResolution: { pixels in
+                    if pixels > (preview.map { Int(max($0.pixelSize.width, $0.pixelSize.height)) } ?? 0) {
+                        neededPixels = pixels
                     }
-                    .frame(width: frame.width, height: frame.height)
-                    .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
-                    .overlay {
-                        if isDropTargeted {
-                            Rectangle().strokeBorder(Color.accentColor, lineWidth: 2)
-                        }
-                    }
-                    .dropDestination(for: String.self) { payloads, _ in
-                        addWatermarks(payloads)
-                    } isTargeted: { isDropTargeted = $0 }
-                } else {
-                    ProgressView().controlSize(.small)
                 }
+            )
+            if preview == nil {
+                ProgressView().controlSize(.small)
             }
-            .frame(width: geometry.size.width, height: geometry.size.height)
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .padding(CanvasGeometry.padding - 2)
+                    .allowsHitTesting(false)
+            }
         }
+        .dropDestination(for: String.self) { payloads, _ in
+            addWatermarks(payloads)
+        } isTargeted: { isDropTargeted = $0 }
         .task(id: session.editor.currentPhoto?.url) { await loadPreview() }
+        .task(id: ResolutionRequest(url: session.editor.currentPhoto?.url, bucket: resolutionBucket)) {
+            await loadSharperPreview()
+        }
+        .task(id: watermarkIDs) { await loadWatermarkImages() }
     }
+
+    // MARK: - Layers
 
     private var currentKey: String? { session.editor.currentPhoto?.relativePath }
 
-    private var visibleLayers: [Layer] {
+    private var currentLayers: [Layer] {
         guard let key = currentKey else { return [] }
-        return session.editor.layers(for: key).filter(\.isVisible)
+        return session.editor.layers(for: key)
     }
 
-    private func fittedSize(in container: CGSize) -> CGSize? {
-        guard let size = preview?.originalSize, size.width > 0, size.height > 0 else { return nil }
-        let available = CGSize(width: max(container.width - 48, 1), height: max(container.height - 48, 1))
-        let scale = min(available.width / size.width, available.height / size.height)
-        return CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+    private var watermarkIDs: Set<UUID> { Set(currentLayers.map(\.watermarkID)) }
+
+    private var canvasLayers: [CanvasLayerModel] {
+        currentLayers.map { layer in
+            let watermark = model.library.watermark(id: layer.watermarkID)
+            return CanvasLayerModel(
+                id: layer.id,
+                placement: layer.placement,
+                blend: layer.blend,
+                isVisible: layer.isVisible && watermark != nil,
+                isLocked: false,
+                aspect: watermark?.aspect ?? 1,
+                image: watermarkImages[layer.watermarkID],
+                name: watermark?.name ?? "Missing watermark"
+            )
+        }
+    }
+
+    private func addWatermarks(_ payloads: [String]) -> Bool {
+        let ids = payloads.compactMap(WatermarkDrag.id(from:))
+        guard !ids.isEmpty else { return false }
+        for id in ids {
+            let layer = Layer(watermarkID: id)
+            session.editor.addLayer(layer, for: currentKey)
+            session.selectedLayerID = layer.id
+        }
+        return true
+    }
+
+    // MARK: - Loading
+
+    /// Preview sizes step up in buckets so zooming doesn't trigger a decode on every frame.
+    private var resolutionBucket: Int {
+        guard case .scale = session.zoom, let size = preview?.originalSize else { return AlbumSession.previewPixels }
+        let longEdge = Int(max(size.width, size.height))
+        let buckets = [AlbumSession.previewPixels, 4096, 6144, 8192]
+        let bucket = buckets.first { $0 >= neededPixels } ?? 8192
+        return min(bucket, longEdge)
     }
 
     private func loadPreview() async {
+        neededPixels = AlbumSession.previewPixels
         guard let url = session.editor.currentPhoto?.url else { preview = nil; return }
         do {
-            preview = try await model.previews.image(for: url, maxPixel: AlbumSession.previewPixels)
+            let image = try await model.previews.image(for: url, maxPixel: AlbumSession.previewPixels)
+            preview = image
+            session.currentPhotoSize = image.originalSize
         } catch {
             preview = nil
             log.error("Preview failed: \(error.localizedDescription, privacy: .public)")
@@ -85,44 +126,77 @@ struct PhotoCanvasView: View {
         await session.prefetchNeighbours()
     }
 
-    private func addWatermarks(_ payloads: [String]) -> Bool {
-        let ids = payloads.compactMap(WatermarkDrag.id(from:))
-        guard !ids.isEmpty else { return false }
-        for id in ids {
-            session.editor.addLayer(Layer(watermarkID: id), for: currentKey)
+    private func loadSharperPreview() async {
+        let bucket = resolutionBucket
+        guard let url = session.editor.currentPhoto?.url, bucket > AlbumSession.previewPixels,
+              let current = preview, Int(max(current.pixelSize.width, current.pixelSize.height)) < bucket
+        else { return }
+        // Big previews are only needed while zoomed; keep them out of the shared cache.
+        let image = try? await Task.detached(priority: .userInitiated) {
+            try ImageLoader().preview(url: url, maxPixel: bucket)
+        }.value
+        if let image, session.editor.currentPhoto?.url == url {
+            preview = image
         }
-        return true
+    }
+
+    private func loadWatermarkImages() async {
+        var images: [UUID: CGImage] = [:]
+        for id in watermarkIDs {
+            guard let watermark = model.library.watermark(id: id) else { continue }
+            images[id] = try? await model.previews.image(for: model.library.fileURL(for: watermark), maxPixel: 1024).cgImage
+        }
+        watermarkImages = images
     }
 }
 
-/// One watermark drawn with the same geometry the exporter uses (`Placement.rect`).
-private struct WatermarkOverlay: View {
-    @Environment(AppModel.self) private var model
-    let layer: Layer
-    let frame: CGSize
+private struct ResolutionRequest: Hashable {
+    let url: URL?
+    let bucket: Int
+}
 
-    var body: some View {
-        if let watermark = model.library.watermark(id: layer.watermarkID) {
-            let rect = layer.placement.rect(in: frame, watermarkAspect: watermark.aspect)
-            AsyncThumbnail(url: model.library.fileURL(for: watermark), cache: model.previews, maxPixel: 1024)
-                .frame(width: rect.width, height: rect.height)
-                .opacity(layer.placement.opacity)
-                .blendMode(layer.blend.swiftUI)
-                .rotationEffect(.radians(layer.placement.rotation))
-                .position(x: rect.midX, y: rect.midY)
-                .allowsHitTesting(false)
+/// Bridges `CanvasView` into SwiftUI; gestures report back through the session and editor.
+private struct InteractiveCanvas: NSViewRepresentable {
+    let session: AlbumSession
+    let photo: CGImage?
+    let photoSize: CGSize
+    let layers: [CanvasLayerModel]
+    let canvasColor: NSColor
+    let onNeedsResolution: (Int) -> Void
+
+    func makeNSView(context: Context) -> CanvasView {
+        let view = CanvasView(frame: .zero)
+        view.onSelect = { id in session.selectedLayerID = id }
+        view.onCommit = { id, placement in
+            guard let key = session.editor.currentPhoto?.relativePath else { return }
+            session.editor.setPlacement(placement, layer: id, for: key)
         }
+        view.onZoom = { zoom in session.zoom = zoom }
+        view.onScale = { scale in session.pointsPerPixel = scale }
+        return view
+    }
+
+    func updateNSView(_ view: CanvasView, context: Context) {
+        view.onNeedsResolution = onNeedsResolution
+        view.canvasColor = canvasColor
+        view.photoSize = photoSize
+        view.photo = photo
+        view.zoom = session.zoom
+        view.showWatermarks = session.showWatermarks
+        view.showHandles = session.showHandles
+        view.layers = layers
+        view.selectedID = session.selectedLayerID
     }
 }
 
 extension AsterCore.BlendMode {
-    var swiftUI: SwiftUI.BlendMode {
+    var title: String {
         switch self {
-        case .normal: .normal
-        case .multiply: .multiply
-        case .screen: .screen
-        case .overlay: .overlay
-        case .softLight: .softLight
+        case .normal: "Normal"
+        case .multiply: "Multiply"
+        case .screen: "Screen"
+        case .overlay: "Overlay"
+        case .softLight: "Soft Light"
         }
     }
 }

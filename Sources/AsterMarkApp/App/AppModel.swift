@@ -225,6 +225,50 @@ final class AppModel {
         session.editor.applyToAll(session.editor.layers(for: key), replacingOverrides: replacingOverrides)
     }
 
+    // MARK: - Selected layer
+
+    private var selectedLayerContext: (session: AlbumSession, key: String, layer: Layer)? {
+        guard let session, let key = session.editor.currentPhoto?.relativePath, let id = session.selectedLayerID,
+              let layer = session.editor.layers(for: key).first(where: { $0.id == id })
+        else { return nil }
+        return (session, key, layer)
+    }
+
+    var hasSelectedLayer: Bool { selectedLayerContext != nil }
+
+    func aspect(of layer: Layer) -> Double {
+        library.watermark(id: layer.watermarkID)?.aspect ?? 1
+    }
+
+    /// Moves the selected watermark by screen points (converted to photo pixels at the current zoom).
+    func nudgeSelected(dx: Double, dy: Double) {
+        guard let (session, key, layer) = selectedLayerContext, session.currentPhotoSize.width > 0 else { return }
+        let scale = max(session.pointsPerPixel, 0.0001)
+        session.editor.moveLayer(layer.id, for: key, by: CGVector(dx: dx / scale, dy: dy / scale),
+                                 frame: session.currentPhotoSize, aspect: aspect(of: layer))
+    }
+
+    func anchorSelected(_ anchor: Anchor) {
+        guard let (session, key, layer) = selectedLayerContext else { return }
+        session.editor.setAnchor(anchor, layer: layer.id, for: key)
+    }
+
+    func removeSelected() {
+        guard let (session, key, layer) = selectedLayerContext else { return }
+        session.editor.removeLayer(layer.id, for: key)
+        session.selectedLayerID = nil
+    }
+
+    /// Tab: selects the next watermark on the photo.
+    func cycleSelection(backwards: Bool = false) {
+        guard let session, let key = session.editor.currentPhoto?.relativePath else { return }
+        let layers = session.editor.layers(for: key).filter(\.isVisible)
+        guard !layers.isEmpty else { return }
+        let index = layers.firstIndex { $0.id == session.selectedLayerID }
+        let next = index.map { ($0 + (backwards ? layers.count - 1 : 1)) % layers.count } ?? 0
+        session.selectedLayerID = layers[next].id
+    }
+
     func syncSets() {
         session?.editor.sets = library.sets
     }

@@ -193,3 +193,42 @@ struct SplitMix64 {
         return z ^ (z >> 31)
     }
 }
+
+@MainActor
+@Suite("Album editor placement intents")
+struct AlbumEditorPlacementTests {
+    let logo = UUID()
+
+    func makeEditor() -> AlbumEditor {
+        var project = AlbumProject(folder: URL(fileURLWithPath: "/tmp/Shoot"), bookmark: nil)
+        project.defaultLayers = [Layer(watermarkID: logo, placement: Placement(anchor: .bottomTrailing, marginX: 0.05,
+                                                                               marginY: 0.05, width: 0.2))]
+        let photos = [PhotoRef(url: URL(fileURLWithPath: "/tmp/Shoot/1.jpg"), relativePath: "1.jpg", fileSize: 1,
+                               modified: .distantPast)]
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        return AlbumEditor(project: project, photos: photos, undoManager: undo)
+    }
+
+    @Test func nudgeMovesByPixels() throws {
+        let editor = makeEditor()
+        let frame = CGSize(width: 1000, height: 600)
+        let layer = editor.layers(for: "1.jpg")[0]
+        let before = layer.placement.rect(in: frame, watermarkAspect: 2)
+        editor.moveLayer(layer.id, for: "1.jpg", by: CGVector(dx: -10, dy: 1), frame: frame, aspect: 2)
+        let after = editor.layers(for: "1.jpg")[0].placement.rect(in: frame, watermarkAspect: 2)
+        #expect(abs(after.minX - (before.minX - 10)) < 1e-9)
+        #expect(abs(after.minY - (before.minY + 1)) < 1e-9)
+        #expect(editor.layers(for: "1.jpg")[0].placement.anchor == .bottomTrailing)
+        #expect(editor.undoManager.undoActionName == "Nudge Watermark")
+    }
+
+    @Test func anchorUsesStandardMargins() {
+        let editor = makeEditor()
+        let id = editor.layers(for: "1.jpg")[0].id
+        editor.setAnchor(.top, layer: id, for: "1.jpg")
+        let p = editor.layers(for: "1.jpg")[0].placement
+        #expect(p.anchor == .top && p.marginX == 0 && p.marginY == SnapEngine.defaultMargin)
+        #expect(p.width == 0.2)
+    }
+}

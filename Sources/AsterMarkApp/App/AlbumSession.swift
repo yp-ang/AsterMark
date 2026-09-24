@@ -20,6 +20,16 @@ final class AlbumSession {
     /// Photos selected in the filmstrip (for batch actions). Always includes the current photo.
     var selection: Set<String> = []
 
+    // Canvas state
+    var selectedLayerID: UUID?
+    var zoom: CanvasZoom = .fit
+    var showWatermarks = true
+    var showHandles = true
+    /// View points per photo pixel, reported by the canvas after each layout.
+    @ObservationIgnored var pointsPerPixel: Double = 1
+    /// Oriented full-resolution size of the photo on the canvas.
+    @ObservationIgnored var currentPhotoSize: CGSize = .zero
+
     @ObservationIgnored private let accessStarted: Bool
     @ObservationIgnored private let store: ProjectStore
     @ObservationIgnored private let thumbnails: PreviewCache
@@ -85,6 +95,13 @@ final class AlbumSession {
         editor.select(index)
         selection = editor.currentPhoto.map { [$0.relativePath] } ?? []
     }
+
+    // MARK: - Zoom
+
+    func zoomToFit() { zoom = .fit }
+    func zoomToActualSize() { zoom = .scale(1) }
+    func zoomIn() { zoom = .scale(min(pointsPerPixel * 1.25, 8)) }
+    func zoomOut() { zoom = .scale(max(pointsPerPixel / 1.25, 0.02)) }
 
     func goToNext() { select(editor.currentIndex + 1) }
     func goToPrevious() { select(editor.currentIndex - 1) }
