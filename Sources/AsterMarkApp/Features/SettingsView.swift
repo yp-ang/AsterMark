@@ -31,12 +31,13 @@ private struct GeneralSettings: View {
     }
 }
 
-/// Stored now; embedded as IPTC metadata on export in Phase 8.
+/// Embedded in exports as IPTC/XMP creator, copyright and contact details (per recipe).
 private struct PhotographerSettings: View {
     @AppStorage("profile.creator") private var creator = ""
     @AppStorage("profile.copyright") private var copyright = ""
     @AppStorage("profile.email") private var email = ""
     @AppStorage("profile.website") private var website = ""
+    @AppStorage("profile.usageTerms") private var usageTerms = ""
 
     var body: some View {
         Form {
@@ -45,6 +46,7 @@ private struct PhotographerSettings: View {
                 TextField("Copyright notice", text: $copyright, prompt: Text("© 2026 Jane Doe Photography"))
                 TextField("Email", text: $email)
                 TextField("Website", text: $website)
+                TextField("Usage terms", text: $usageTerms, prompt: Text("Licensed for personal use only"))
             } footer: {
                 Text("Added to exported photos' metadata so your work stays credited.")
                     .font(.callout)

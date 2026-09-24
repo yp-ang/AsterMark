@@ -28,6 +28,7 @@ final class AppModel {
     let thumbnails = PreviewCache(costLimit: 256 * 1024 * 1024)
     /// Screen-sized photo and watermark images for the canvas.
     let previews = PreviewCache(costLimit: 768 * 1024 * 1024)
+    let export: ExportController
 
     private(set) var recents: [ProjectSummary] = []
     /// Social size presets: built-ins merged with the user's presets.json.
@@ -49,6 +50,7 @@ final class AppModel {
         self.paths = paths
         store = ProjectStore(directory: paths.projects)
         library = WatermarkLibrary(directory: paths.library)
+        export = ExportController(library: library)
         presets = SizePreset.load(userFile: paths.presetsFile)
 
         let names: [Notification.Name] = [.NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidUndoChange,

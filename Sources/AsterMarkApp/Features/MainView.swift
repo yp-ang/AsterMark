@@ -43,6 +43,12 @@ struct MainView: View {
         } message: {
             Text("Some photos have their own watermark layout. Keep them, or replace every photo with this layout?")
         }
+        .sheet(isPresented: Bindable(model.export).isShowingSheet) {
+            if let session = model.session { ExportSheet(session: session) }
+        }
+        .sheet(isPresented: Bindable(model.export).isShowingReport) {
+            if let report = model.export.lastReport { ExportReportSheet(report: report) }
+        }
         .onAppear { keyMonitor.install(model: model) }
         .onDisappear { keyMonitor.remove() }
     }
@@ -123,9 +129,21 @@ struct MainView: View {
             Button("Apply to All", systemImage: "square.stack.3d.down.right") { model.requestApplyToAll() }
                 .disabled(model.session?.editor.currentPhoto == nil)
                 .help("Use this photo's watermark layout on every photo (⌘D)")
-            Button("Export", systemImage: "square.and.arrow.up") {}
-                .disabled(true)
-                .help("Export recipes (coming in Phase 8)")
+            if let progress = model.export.progress {
+                HStack(spacing: 6) {
+                    ProgressView(value: progress.fraction)
+                        .progressViewStyle(.circular)
+                        .controlSize(.small)
+                    Text("\(progress.completed)/\(progress.total)").monospacedDigit().font(.caption)
+                    Button("Stop Export", systemImage: "xmark.circle.fill") { model.export.cancel() }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                }
+                .help("Exporting… Keep working; you'll get a notification when it's done.")
+            }
+            Button("Export", systemImage: "square.and.arrow.up") { model.export.isShowingSheet = true }
+                .disabled(model.session?.editor.photos.isEmpty ?? true || model.export.isRunning)
+                .help("Export every output in one pass (⌘E)")
             Button("Inspector", systemImage: "sidebar.trailing") { isInspectorPresented.toggle() }
         }
     }

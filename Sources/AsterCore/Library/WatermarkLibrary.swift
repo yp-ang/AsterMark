@@ -277,83 +277,43 @@ public final class WatermarkLibrary {
         try persist()
     }
 
-    /// Loads a watermark's bitmap for compositing (PDFs are rasterised at `width`).
-    public func image(for id: UUID, variant: VariantChoice = .primary, width: Int? = nil) throws -> WatermarkImage {
-        guard let watermark = watermark(id: id) else { throw LibraryError.notFound }
-        let fileName = variant == .alternate ? (watermark.alternate?.fileName ?? watermark.fileName) : watermark.fileName
-        let url = directory.appendingPathComponent(fileName)
-        if WatermarkRasterizer.isPDF(url) {
-            guard let raster = WatermarkRasterizer.rasterizePDF(url, maxPixel: max(width ?? 2048, 16))
-            else { throw LibraryError.unreadable(url) }
-            return WatermarkImage(cgImage: raster)
-        }
-        return try WatermarkImage(url: url)
+    /// A thread-safe copy of the library for background rendering and export.
+    public var snapshot: LibrarySnapshot {
+        LibrarySnapshot(directory: directory, watermarks: watermarks)
     }
 
-    /// File for the variant a layer shows on a photo whose brightness under the layer is `background`.
+    /// Loads a watermark's bitmap for compositing (PDFs are rasterised at `width`).
+    public func image(for id: UUID, variant: VariantChoice = .primary, width: Int? = nil) throws -> WatermarkImage {
+        try snapshot.image(for: id, variant: variant, width: width)
+    }
+
     public func resolvedVariant(for layer: Layer, background: Double?) -> VariantChoice {
-        guard let watermark = watermark(id: layer.watermarkID), let alternate = watermark.alternate else { return .primary }
-        return Luminance.choose(layer.variant, primary: watermark.luminance, alternate: alternate.luminance,
-                                background: background)
+        snapshot.resolvedVariant(for: layer, background: background)
     }
 
     public func fileURL(for watermark: Watermark, variant: VariantChoice) -> URL {
-        let name = variant == .alternate ? (watermark.alternate?.fileName ?? watermark.fileName) : watermark.fileName
-        return directory.appendingPathComponent(name)
+        snapshot.fileURL(for: watermark, variant: variant)
     }
 
-    /// Width / height of what a layer draws (text is measured; graphics use the chosen variant).
     public func aspect(of layer: Layer, tokens: TextTokens, variant: VariantChoice = .primary) -> Double {
-        if let text = layer.text { return TextRenderer.aspect(text, tokens: tokens) ?? 4 }
-        guard let watermark = watermark(id: layer.watermarkID) else { return 1 }
-        if variant == .alternate, let alt = watermark.alternate {
-            return Double(alt.pixelWidth) / Double(max(alt.pixelHeight, 1))
-        }
-        return watermark.aspect
+        snapshot.aspect(of: layer, tokens: tokens, variant: variant)
     }
 
-    /// Luminance of what a layer draws, for contrast checks.
     public func luminance(of layer: Layer, variant: VariantChoice) -> Double? {
-        if let text = layer.text { return text.luminance }
-        guard let watermark = watermark(id: layer.watermarkID) else { return nil }
-        return variant == .alternate ? watermark.alternate?.luminance : watermark.luminance
+        snapshot.luminance(of: layer, variant: variant)
     }
 
-    /// Converts visible model layers into renderable layers for one photo.
-    /// - Parameters:
-    ///   - frame: output frame in pixels (after crop and resize), so vectors and text render sharp.
-    ///   - background: a small preview of the (cropped) photo, for adaptive variants.
     public func renderLayers(
         _ layers: [Layer],
         frame: CGSize = CGSize(width: 2048, height: 2048),
         tokens: TextTokens = TextTokens(),
         background: CGImage? = nil
     ) -> [WatermarkLayer] {
-        let shortEdge = min(frame.width, frame.height)
-        return layers.filter(\.isVisible).compactMap { layer in
-            let targetWidth = max(Int((layer.placement.width * shortEdge).rounded(.up)), 16)
-            let image: WatermarkImage
-            if let text = layer.text {
-                guard let cg = TextRenderer.image(text, tokens: tokens, width: targetWidth) else { return nil }
-                image = WatermarkImage(cgImage: cg)
-            } else {
-                let region = layer.tile == nil
-                    ? Self.normalizedRegion(of: layer, frame: frame, aspect: aspect(of: layer, tokens: tokens))
-                    : .full
-                let variant = resolvedVariant(for: layer, background: background.map { Luminance.mean(of: $0, in: region) })
-                guard let loaded = try? self.image(for: layer.watermarkID, variant: variant, width: targetWidth) else { return nil }
-                image = loaded
-            }
-            return WatermarkLayer(watermark: image, placement: layer.placement, blend: layer.blend,
-                                  shadow: layer.shadow, tile: layer.tile)
-        }
+        snapshot.renderLayers(layers, frame: frame, tokens: tokens, background: background)
     }
 
-    /// The layer's rect as a unit rect of the frame (for sampling the photo under it).
     public static func normalizedRegion(of layer: Layer, frame: CGSize, aspect: Double) -> NormalizedRect {
-        let rect = layer.placement.rect(in: frame, watermarkAspect: aspect)
-        return NormalizedRect(x: rect.minX / frame.width, y: rect.minY / frame.height,
-                              width: rect.width / frame.width, height: rect.height / frame.height)
+        LibrarySnapshot.normalizedRegion(of: layer, frame: frame, aspect: aspect)
     }
 
     // MARK: - Sets
@@ -431,5 +391,98 @@ public final class WatermarkLibrary {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try encoder.encode(index).write(to: indexURL, options: .atomic)
+    }
+}
+
+/// An immutable view of the library that can render layers on any thread.
+public struct LibrarySnapshot: Sendable, Hashable {
+    public let directory: URL
+    public let watermarks: [Watermark]
+
+    public init(directory: URL, watermarks: [Watermark]) {
+        self.directory = directory
+        self.watermarks = watermarks
+    }
+
+    public func watermark(id: UUID) -> Watermark? {
+        watermarks.first { $0.id == id }
+    }
+
+    public func fileURL(for watermark: Watermark, variant: VariantChoice) -> URL {
+        let name = variant == .alternate ? (watermark.alternate?.fileName ?? watermark.fileName) : watermark.fileName
+        return directory.appendingPathComponent(name)
+    }
+
+    /// Loads a watermark's bitmap (PDFs are rasterised at `width`).
+    public func image(for id: UUID, variant: VariantChoice = .primary, width: Int? = nil) throws -> WatermarkImage {
+        guard let watermark = watermark(id: id) else { throw LibraryError.notFound }
+        let url = fileURL(for: watermark, variant: variant)
+        if WatermarkRasterizer.isPDF(url) {
+            guard let raster = WatermarkRasterizer.rasterizePDF(url, maxPixel: max(width ?? 2048, 16))
+            else { throw LibraryError.unreadable(url) }
+            return WatermarkImage(cgImage: raster)
+        }
+        return try WatermarkImage(url: url)
+    }
+
+    /// Which version a layer shows on a photo whose brightness under the layer is `background`.
+    public func resolvedVariant(for layer: Layer, background: Double?) -> VariantChoice {
+        guard let watermark = watermark(id: layer.watermarkID), let alternate = watermark.alternate else { return .primary }
+        return Luminance.choose(layer.variant, primary: watermark.luminance, alternate: alternate.luminance,
+                                background: background)
+    }
+
+    /// Width / height of what a layer draws (text is measured; graphics use the chosen variant).
+    public func aspect(of layer: Layer, tokens: TextTokens, variant: VariantChoice = .primary) -> Double {
+        if let text = layer.text { return TextRenderer.aspect(text, tokens: tokens) ?? 4 }
+        guard let watermark = watermark(id: layer.watermarkID) else { return 1 }
+        if variant == .alternate, let alt = watermark.alternate {
+            return Double(alt.pixelWidth) / Double(max(alt.pixelHeight, 1))
+        }
+        return watermark.aspect
+    }
+
+    /// Luminance of what a layer draws, for contrast checks.
+    public func luminance(of layer: Layer, variant: VariantChoice) -> Double? {
+        if let text = layer.text { return text.luminance }
+        guard let watermark = watermark(id: layer.watermarkID) else { return nil }
+        return variant == .alternate ? watermark.alternate?.luminance : watermark.luminance
+    }
+
+    /// Converts visible model layers into renderable layers for one photo.
+    /// - Parameters:
+    ///   - frame: output frame in pixels (after crop and resize), so vectors and text render sharp.
+    ///   - background: a small preview of the (cropped) photo, for adaptive variants.
+    public func renderLayers(
+        _ layers: [Layer],
+        frame: CGSize,
+        tokens: TextTokens,
+        background: CGImage?
+    ) -> [WatermarkLayer] {
+        let shortEdge = min(frame.width, frame.height)
+        return layers.filter(\.isVisible).compactMap { layer in
+            let targetWidth = max(Int((layer.placement.width * shortEdge).rounded(.up)), 16)
+            let image: WatermarkImage
+            if let text = layer.text {
+                guard let cg = TextRenderer.image(text, tokens: tokens, width: targetWidth) else { return nil }
+                image = WatermarkImage(cgImage: cg)
+            } else {
+                let region = layer.tile == nil
+                    ? Self.normalizedRegion(of: layer, frame: frame, aspect: aspect(of: layer, tokens: tokens))
+                    : .full
+                let variant = resolvedVariant(for: layer, background: background.map { Luminance.mean(of: $0, in: region) })
+                guard let loaded = try? self.image(for: layer.watermarkID, variant: variant, width: targetWidth) else { return nil }
+                image = loaded
+            }
+            return WatermarkLayer(watermark: image, placement: layer.placement, blend: layer.blend,
+                                  shadow: layer.shadow, tile: layer.tile)
+        }
+    }
+
+    /// The layer's rect as a unit rect of the frame (for sampling the photo under it).
+    public static func normalizedRegion(of layer: Layer, frame: CGSize, aspect: Double) -> NormalizedRect {
+        let rect = layer.placement.rect(in: frame, watermarkAspect: aspect)
+        return NormalizedRect(x: rect.minX / frame.width, y: rect.minY / frame.height,
+                              width: rect.width / frame.width, height: rect.height / frame.height)
     }
 }

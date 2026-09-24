@@ -9,7 +9,7 @@
 ## Steps
 
 - [x] 7.1 Presets: built-in list in `AsterCore/Presets` + user override `~/Library/Application Support/AsterMark/presets.json` (same schema, merged by id). Schema: `id, platform, name, aspectW, aspectH, pixelWidth?, pixelHeight?, longEdge?`.
-- [x] 7.2 Crop mode (`C`): overlay with dimmed outside, thirds grid, corner/edge handles, ratio lock, drag inside to reposition, ↩ commit, esc cancel. Rotate/straighten out of scope.
+- [x] 7.2 Crop mode (`C`): overlay with dimmed outside, thirds grid, corner handles, ratio lock, drag inside to reposition, ↩ commit, esc cancel. Rotate/straighten out of scope.
 - [x] 7.3 Output selector in the toolbar (Master · Client · Instagram 3:4 · Facebook 2048). Crops and layer overrides are stored per recipe. Recipes live in the library; the starter recipes are saved on first launch so their ids (and so every crop) stay stable.
 - [x] 7.4 Default crop: the largest centred rect. "Smart" crop centres on Vision's attention-based salient region (`VNGenerateAttentionBasedSaliencyImageRequest`), kept inside the photo.
 - [x] 7.5 Watermarks lay out relative to the crop automatically (anchor-relative in crop space). The background review checks every cropping output in its own frame (off-edge, contrast, faces), so a clipped layer is flagged.

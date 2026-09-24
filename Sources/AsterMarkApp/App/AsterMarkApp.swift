@@ -74,6 +74,15 @@ struct AppCommands: Commands {
                 .disabled(model.recents.isEmpty)
             }
             Divider()
+            Button("Export…") { model.export.isShowingSheet = true }
+                .keyboardShortcut("e")
+                .disabled(model.session == nil || model.export.isRunning)
+            Button("Export Again") { if let session = model.session { model.export.exportAgain(session: session) } }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(model.session == nil || !model.export.canExportAgain)
+            Button("Show Last Export in Finder") { model.export.revealLastExport() }
+                .disabled(model.export.lastReport?.written.isEmpty ?? true)
+            Divider()
             Button("Import Watermark…") { model.showImportPanel() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
             Button("Close Album") { Task { await model.closeAlbum() } }

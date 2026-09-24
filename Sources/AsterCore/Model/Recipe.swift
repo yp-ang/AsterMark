@@ -54,7 +54,8 @@ public struct Recipe: Codable, Sendable, Hashable, Identifiable {
                 settings: ExportSettings(
                     format: .jpeg(quality: 0.9),
                     render: RenderSpec(sizeMode: .exact(width: 1080, height: 1440), sharpening: .standard),
-                    colorSpace: .sRGB
+                    colorSpace: .sRGB,
+                    metadata: .social
                 ),
                 cropPresetID: "ig-3x4",
                 namingTemplate: "{name}_ig"
@@ -64,7 +65,8 @@ public struct Recipe: Codable, Sendable, Hashable, Identifiable {
                 settings: ExportSettings(
                     format: .jpeg(quality: 0.85),
                     render: RenderSpec(sizeMode: .longEdge(2048), sharpening: .standard),
-                    colorSpace: .sRGB
+                    colorSpace: .sRGB,
+                    metadata: .social
                 ),
                 namingTemplate: "{name}_fb"
             ),

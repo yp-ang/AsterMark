@@ -114,11 +114,11 @@ struct ExportTests {
         ])
 
         let kept = dir.appendingPathComponent("kept.jpg")
-        try exporter.export(source: src, layers: [], settings: ExportSettings(preserveMetadata: true), to: kept)
+        try exporter.export(source: src, layers: [], settings: ExportSettings(metadata: .client), to: kept)
         #expect(try ImageSourceInfo(url: kept).captureDate != nil)
 
         let stripped = dir.appendingPathComponent("stripped.jpg")
-        try exporter.export(source: src, layers: [], settings: ExportSettings(preserveMetadata: false), to: stripped)
+        try exporter.export(source: src, layers: [], settings: ExportSettings(metadata: .none), to: stripped)
         #expect(try ImageSourceInfo(url: stripped).captureDate == nil)
     }
 
