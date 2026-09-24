@@ -101,7 +101,7 @@ struct ExportSheet: View {
             if session.selection.count > 1 { scope = .selection }
         }
         .sheet(item: $editing) { recipe in
-            RecipeEditor(recipe: recipe, presets: session.presets) { saved in
+            RecipeEditor(recipe: recipe, presets: session.presets, sets: model.library.sets) { saved in
                 if model.library.recipe(id: saved.id) == nil {
                     _ = try? model.library.addRecipe(saved)
                     selected.insert(saved.id)
@@ -168,11 +168,13 @@ struct RecipeEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State var recipe: Recipe
     let presets: [SizePreset]
+    let sets: [WatermarkSet]
     let onSave: (Recipe) -> Void
 
-    init(recipe: Recipe, presets: [SizePreset], onSave: @escaping (Recipe) -> Void) {
+    init(recipe: Recipe, presets: [SizePreset], sets: [WatermarkSet], onSave: @escaping (Recipe) -> Void) {
         _recipe = State(initialValue: recipe)
         self.presets = presets
+        self.sets = sets
         self.onSave = onSave
     }
 
@@ -237,6 +239,23 @@ struct RecipeEditor: View {
                     }
                     Toggle("Allow enlarging", isOn: $recipe.settings.render.allowUpscale)
                 }
+                Section("Watermarks & destination") {
+                    Picker("Layout", selection: $recipe.watermarkSetID) {
+                        Text("Album layout").tag(UUID?.none)
+                        ForEach(sets) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                    .help("Photos without their own layout use this saved layout for this output")
+                    LabeledContent("Folder") {
+                        HStack {
+                            Text(recipe.destinationPath ?? "Export folder / \(recipe.name)")
+                                .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                            if recipe.destinationBookmark != nil {
+                                Button("Reset") { recipe.destinationBookmark = nil; recipe.destinationPath = nil }
+                            }
+                            Button("Choose…") { chooseFolder() }
+                        }
+                    }
+                }
                 Section("Metadata") {
                     Picker("Keep", selection: $recipe.settings.metadata.mode) {
                         Text("Everything").tag(MetadataPolicy.Mode.keepAll)
@@ -279,6 +298,20 @@ struct RecipeEditor: View {
             .padding(16)
         }
         .frame(width: 520, height: 680)
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Use Folder"
+        panel.message = "Always export “\(recipe.name)” to this folder."
+        panel.begin { response in
+            guard response == .OK, let url = panel.url, let data = try? Bookmarks.create(for: url) else { return }
+            recipe.destinationBookmark = data
+            recipe.destinationPath = url.path
+        }
     }
 
     @ViewBuilder

@@ -322,6 +322,9 @@ final class CanvasView: NSView {
                 outline.addLine(to: knob)
                 handles.addEllipse(in: CGRect(x: knob.x - 5, y: knob.y - 5, width: 10, height: 10))
             }
+            let strong = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+            overlayLayer.lineWidth = strong ? 2 : 1
+            handlesLayer.lineWidth = strong ? 1.5 : 1
             overlayLayer.path = outline
             handlesLayer.path = handles
 

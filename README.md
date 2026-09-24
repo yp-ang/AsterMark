@@ -2,7 +2,7 @@
 
 A fast, Mac-native watermarking app for photographers. Apply your logo to a whole shoot in one click, fix the exceptions with a drag, crop for Instagram and Facebook, and export every deliverable in one pass. Originals are never modified.
 
-> Status: **Phase 8 complete**: the full workflow is in place. Brand, review, crop, and export every deliverable in one pass with sensible metadata. See [`docs/`](docs/README.md) for the spec and roadmap.
+> Status: **Phase 9 complete**: the full workflow plus app icon, welcome screen, keyboard shortcut reference, Finder service, shareable presets and a Lightroom export action. See [`docs/`](docs/README.md) for the spec and roadmap.
 
 ## Requirements
 
@@ -38,6 +38,13 @@ make release SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY
 6. Press G for the review grid. Photos flagged ⚠︎ (face covered, off the edge, low contrast) can be stepped through with ⌘→ / ⌘←.
 7. Choose an output in the toolbar (e.g. **Instagram 3:4**) and press C to crop: drag to move, drag a corner to resize, ↩ to finish. Crop Selected / Crop All in the inspector does many photos at once, centred or following the subject. O shows what Instagram's grid trims.
 8. Press ⌘E, tick the outputs (Client, Instagram 3:4, Facebook 2048, or your own), choose a folder, and Export. Keep working while it runs; ⌘⇧E repeats the last export. Social outputs drop GPS and camera serials and add your name and copyright from Settings ▸ Photographer.
+
+## Extras
+
+- **Share presets:** File ▸ Export Presets… saves your layouts and outputs, with their watermark graphics, to a `.astermarkpresets` file. Double-click it on another Mac to import.
+- **Finder:** right-click a folder ▸ Services ▸ Watermark with AsterMark.
+- **Lightroom Classic:** copy `scripts/lightroom/Open in AsterMark.sh` to `~/Library/Application Support/Adobe/Lightroom/Export Actions/`, then choose it under Export ▸ Post-Processing.
+- **Icon:** `swift scripts/make-icon.swift` regenerates `Resources/AppIcon.icns`.
 
 ## Project layout
 

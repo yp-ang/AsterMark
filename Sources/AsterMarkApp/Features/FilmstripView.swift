@@ -97,8 +97,9 @@ struct FilmstripView: NSViewRepresentable {
             }
             if newCurrent != current, keys.indices.contains(newCurrent) {
                 current = newCurrent
-                collectionView.animator().scrollToItems(at: [IndexPath(item: newCurrent, section: 0)],
-                                                       scrollPosition: .centeredHorizontally)
+                let target: NSCollectionView = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                    ? collectionView : collectionView.animator()
+                target.scrollToItems(at: [IndexPath(item: newCurrent, section: 0)], scrollPosition: .centeredHorizontally)
             }
         }
 

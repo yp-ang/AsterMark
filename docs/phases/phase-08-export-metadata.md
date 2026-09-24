@@ -10,7 +10,7 @@
 
 - [x] 8.1 Export sheet (⌘E) with a recipe editor per output. Destinations: one folder with a subfolder per output (or a recipe's own folder). Recipe editor: list of recipes with checkboxes, each editable: destination (bookmark), format/quality, size mode, crop preset, watermark set, colour policy, sharpening, metadata policy, naming template, conflict policy. Ship three defaults: "Client – full resolution", "Instagram 3:4", "Facebook 2048".
 - [x] 8.2 `NamingTemplate` parser/renderer with live preview of the first filename; validates illegal characters and collisions within the batch.
-- [x] 8.3 `ExportEngine` actor: job = photos × recipes; bounded `TaskGroup`; per-job security-scoped access; cancellation; progress `AsyncStream`.
+- [x] 8.3 `ExportEngine` actor: job = photos × recipes; bounded `TaskGroup`; cancellation; progress callback. Security-scoped access to the destinations is held for the whole pass by `ExportController`.
 - [x] 8.4 Progress: toolbar ring with count and stop button, Dock badge (%), and a notification with totals when done. File ▸ Show Last Export in Finder. (Pause was dropped; stop plus Export Again covers it.)
 - [x] 8.5 Failure report: list of files with reason; retry failed.
 - [x] 8.6 `MetadataPolicy` + `MetadataWriter` on `CGImageMetadata`: keep everything / copyright and capture date only / nothing; remove GPS and place names, and camera and lens serials and owner; add creator, copyright, credit, usage terms, website and email from the photographer profile; set `xmp:CreatorTool`, orientation 1 and pixel dimensions. ImageIO fills in the IPTC fields from the XMP.

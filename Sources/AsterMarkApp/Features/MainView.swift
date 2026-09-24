@@ -8,6 +8,7 @@ struct MainView: View {
     @State private var isInspectorPresented = true
     @State private var isDropTargeted = false
     @State private var keyMonitor = KeyMonitor()
+    @State private var showOnboarding = false
 
     var body: some View {
         @Bindable var model = model
@@ -49,7 +50,25 @@ struct MainView: View {
         .sheet(isPresented: Bindable(model.export).isShowingReport) {
             if let report = model.export.lastReport { ExportReportSheet(report: report) }
         }
-        .onAppear { keyMonitor.install(model: model) }
+        // An overlay rather than a sheet: AppKit won't quit while a sheet is open.
+        .overlay {
+            if showOnboarding {
+                ZStack {
+                    Rectangle().fill(.black.opacity(0.25)).ignoresSafeArea()
+                    OnboardingView { showOnboarding = false }
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        .shadow(radius: 30)
+                }
+                .transition(.opacity)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: OnboardingView.showNotification)) { _ in
+            showOnboarding = true
+        }
+        .onAppear {
+            keyMonitor.install(model: model)
+            showOnboarding = !UserDefaults.standard.bool(forKey: OnboardingView.seenKey)
+        }
         .onDisappear { keyMonitor.remove() }
     }
 

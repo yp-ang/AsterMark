@@ -21,6 +21,17 @@ public enum LibraryError: Error, Equatable, LocalizedError {
 
 /// A watermark graphic ready to add to the library: bitmaps trimmed and encoded as PNG, PDFs kept as vectors.
 public struct PreparedWatermark: Sendable, Hashable {
+    public init(name: String, data: Data, fileExtension: String, pixelWidth: Int, pixelHeight: Int,
+                contentHash: String, luminance: Double?) {
+        self.name = name
+        self.data = data
+        self.fileExtension = fileExtension
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.contentHash = contentHash
+        self.luminance = luminance
+    }
+
     public let name: String
     public let data: Data
     /// "png" or "pdf".
@@ -211,6 +222,10 @@ public final class WatermarkLibrary {
         let prepared = try await Task.detached(priority: .userInitiated) {
             try WatermarkPreparer.prepare(url: url)
         }.value
+        try setAlternate(for: id, prepared: prepared)
+    }
+
+    public func setAlternate(for id: UUID, prepared: PreparedWatermark) throws {
         guard let index = watermarks.firstIndex(where: { $0.id == id }) else { throw LibraryError.notFound }
         try write(prepared)
         watermarks[index].alternate = WatermarkAlternate(
@@ -319,8 +334,8 @@ public final class WatermarkLibrary {
     // MARK: - Sets
 
     @discardableResult
-    public func addSet(name: String, layers: [Layer]) throws -> WatermarkSet {
-        let set = WatermarkSet(name: name, layers: layers)
+    public func addSet(name: String, layers: [Layer], id: UUID = UUID()) throws -> WatermarkSet {
+        let set = WatermarkSet(id: id, name: name, layers: layers)
         sets.append(set)
         try persist()
         return set

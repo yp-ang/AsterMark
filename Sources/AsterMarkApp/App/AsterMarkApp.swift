@@ -24,6 +24,11 @@ struct AsterMarkApp: App {
             SettingsView()
                 .environment(model)
         }
+
+        Window("Keyboard Shortcuts", id: "shortcuts") {
+            ShortcutsView()
+        }
+        .windowResizability(.contentSize)
     }
 }
 
@@ -32,6 +37,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when launched as a bare executable (e.g. `swift run`) rather than from the .app bundle.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
+        NSApp.servicesProvider = self
+        NSUpdateDynamicServices()
+    }
+
+    /// Finder ▸ Services ▸ Watermark with AsterMark (folders). The pasteboard grants sandbox access.
+    @objc func openInAsterMark(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        Task { @MainActor in await AppModel.shared.handleDroppedURLs(urls) }
     }
 
     /// Folders or images dropped on the Dock icon, or opened with "Open With ▸ AsterMark".
@@ -83,6 +96,10 @@ struct AppCommands: Commands {
             Button("Show Last Export in Finder") { model.export.revealLastExport() }
                 .disabled(model.export.lastReport?.written.isEmpty ?? true)
             Divider()
+            Button("Import Presets…") { model.importPresets() }
+            Button("Export Presets…") { model.exportPresets() }
+                .disabled(model.library.sets.isEmpty && model.library.recipes.isEmpty)
+            Divider()
             Button("Import Watermark…") { model.showImportPanel() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
             Button("Close Album") { Task { await model.closeAlbum() } }
@@ -125,6 +142,10 @@ struct AppCommands: Commands {
             }
             .disabled(session == nil)
             Divider()
+        }
+
+        CommandGroup(replacing: .help) {
+            HelpCommands()
         }
 
         CommandMenu("Photo") {
@@ -170,5 +191,18 @@ struct AppCommands: Commands {
             }
             .disabled(session == nil)
         }
+    }
+}
+
+private struct HelpCommands: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Keyboard Shortcuts") { openWindow(id: "shortcuts") }
+            .keyboardShortcut("/", modifiers: [.command, .shift])
+        Button("Show Welcome") { NotificationCenter.default.post(name: OnboardingView.showNotification, object: nil) }
+        Divider()
+        Link("AsterMark on GitHub", destination: URL(string: "https://github.com/yp-ang/AsterMark")!)
+        Link("Report a Problem…", destination: URL(string: "https://github.com/yp-ang/AsterMark/issues/new")!)
     }
 }

@@ -262,6 +262,9 @@ final class AppModel {
         if let folder = urls.first(where: \.hasDirectoryPath) {
             await open(folder: folder)
         }
+        for presets in urls where presets.pathExtension == LibraryBundle.fileExtension {
+            importPresets(from: presets)
+        }
         let images = urls.filter { !$0.hasDirectoryPath && Self.isWatermarkFile($0) }
         if !images.isEmpty { await importWatermarks(images) }
     }
@@ -344,6 +347,47 @@ final class AppModel {
     func reloadPresets() {
         presets = SizePreset.load(userFile: paths.presetsFile)
         session?.presets = presets
+    }
+
+    // MARK: - Presets
+
+    /// Saves layouts and outputs (with their watermark graphics) to share with another Mac.
+    func exportPresets() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "AsterMark Presets.\(LibraryBundle.fileExtension)"
+        panel.allowedContentTypes = [UTType(exportedAs: "app.astermark.presets")]
+        panel.message = "Saves your layouts and outputs, including the watermark graphics they use."
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    try self.library.exportBundle().write(to: url, options: .atomic)
+                } catch {
+                    self.report(error, title: "Couldn't save the presets")
+                }
+            }
+        }
+    }
+
+    func importPresets() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType(exportedAs: "app.astermark.presets"), .json]
+        panel.prompt = "Import"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in self.importPresets(from: url) }
+        }
+    }
+
+    func importPresets(from url: URL) {
+        do {
+            let summary = try library.importBundle(Data(contentsOf: url))
+            syncSets()
+            alert = AppAlert(title: "Presets imported",
+                             message: "\(summary.sets) layouts, \(summary.recipes) outputs and \(summary.watermarks) watermarks added.")
+        } catch {
+            report(error, title: "Couldn't import “\(url.lastPathComponent)”")
+        }
     }
 
     // MARK: - Errors
