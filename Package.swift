@@ -26,6 +26,8 @@ let package = Package(
         .testTarget(
             name: "AsterCoreTests",
             dependencies: ["AsterCore"],
+            // Golden references are read from disk by path (see GoldenTests), not bundled.
+            exclude: ["Golden"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]

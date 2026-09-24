@@ -22,7 +22,7 @@
 | [7](phases/phase-07-crop-social.md) | Crop & social formats | ✅ Done |
 | [8](phases/phase-08-export-metadata.md) | Export recipes & metadata | ✅ Done |
 | [9](phases/phase-09-polish-integration.md) | Polish, accessibility, macOS integration | ✅ Done (3 deferrals) |
-| [10](phases/phase-10-quality.md) | Quality & performance | ⏳ Next |
-| [11](phases/phase-11-release.md) | Sign, notarise, distribute | |
+| [10](phases/phase-10-quality.md) | Quality & performance | ✅ Done (manual checks listed) |
+| [11](phases/phase-11-release.md) | Sign, notarise, distribute | ⏳ Next |
 
 **MVP (beta)** = all P0 requirements, reached at the end of Phase 8 (P1 items within phases 1–8 may slip to 1.0).

@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
+        Diagnostics.shared.start()
     }
 
     /// Finder ▸ Services ▸ Watermark with AsterMark (folders). The pasteboard grants sandbox access.
@@ -204,5 +205,6 @@ private struct HelpCommands: View {
         Divider()
         Link("AsterMark on GitHub", destination: URL(string: "https://github.com/yp-ang/AsterMark")!)
         Link("Report a Problem…", destination: URL(string: "https://github.com/yp-ang/AsterMark/issues/new")!)
+        Button("Show Diagnostics Folder") { Diagnostics.shared.reveal() }
     }
 }

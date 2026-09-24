@@ -2,6 +2,8 @@
 #
 #   make            build debug
 #   make test       run unit tests
+#   make coverage   AsterCore line coverage
+#   make smoke      end-to-end check of the release app
 #   make bench      pipeline benchmarks (BENCH_ARGS="--dir ~/Pictures/Shoot --count 20")
 #   make app        release .app in build/
 #   make run        build + launch the .app
@@ -31,7 +33,7 @@ INSTALL_DIR := $(shell [ -w /Applications ] && echo /Applications || echo $(HOME
 
 export BUNDLE_ID MARKETING_VERSION BUILD_NUMBER SIGN_IDENTITY NOTARY_PROFILE
 
-.PHONY: all build test bench app run install dmg release clean lint format open-xcode
+.PHONY: all build test coverage smoke bench bench-check app run install dmg release clean lint format open-xcode
 
 all: build
 
@@ -40,6 +42,21 @@ build:
 
 test:
 	swift test $(TEST_FLAGS)
+
+# Line coverage of AsterCore (the app target is UI and is covered by `make smoke`).
+coverage:
+	swift test --enable-code-coverage $(TEST_FLAGS)
+	@xcrun llvm-cov report "$$(find .build/debug/ -name AsterMarkPackageTests -type f -perm +111 | head -1)" \
+		-instr-profile "$$(dirname $$(swift test --show-codecov-path))/default.profdata" \
+		-ignore-filename-regex='Tests|Benchmarks|AsterMarkApp|\.build' | tail -1
+
+# End-to-end check of the sandboxed release app (opens a generated album and logo, then quits).
+smoke: app
+	scripts/smoke-test.sh
+
+# Fails if the pipeline got more than 15% slower than Benchmarks/baseline.json.
+bench-check:
+	swift run -c release Benchmarks --count 4 --check Benchmarks/baseline.json
 
 bench:
 	swift run -c release Benchmarks $(BENCH_ARGS)

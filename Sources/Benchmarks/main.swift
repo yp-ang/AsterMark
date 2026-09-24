@@ -18,14 +18,18 @@ import UniformTypeIdentifiers
 var directory: URL?
 var count = 6
 var jobs: Int?
+var baselineOut: URL?
+var baselineCheck: URL?
 var arguments = CommandLine.arguments.dropFirst().makeIterator()
 while let argument = arguments.next() {
     switch argument {
     case "--dir": directory = arguments.next().map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
     case "--count": count = arguments.next().flatMap(Int.init) ?? count
     case "--jobs": jobs = arguments.next().flatMap(Int.init)
+    case "--write-baseline": baselineOut = arguments.next().map { URL(fileURLWithPath: $0) }
+    case "--check": baselineCheck = arguments.next().map { URL(fileURLWithPath: $0) }
     default:
-        print("Usage: Benchmarks [--dir <folder>] [--count <n>] [--jobs <concurrent exports>]")
+        print("Usage: Benchmarks [--dir <folder>] [--count <n>] [--jobs <n>] [--write-baseline <file>] [--check <file>]")
         exit(2)
     }
 }
@@ -129,6 +133,7 @@ let outDir = workDir.appendingPathComponent("out")
 try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
 print("Concurrency: \(concurrency) · Metal: \(MTLCreateSystemDefaultDevice()?.name ?? "none")\n")
+var results: [String: [String: Double]] = [:]
 print("| Set | Files | Header | Preview 2048 | Preview 512 | Export (1×) | Export throughput | Peak mem |")
 print("|---|---|---|---|---|---|---|---|")
 
@@ -166,6 +171,7 @@ for group in groups where !group.urls.isEmpty {
     }
     let throughput = Double(urls.count) / (wall / 1000)
 
+    results[group.name] = ["preview2048": median(preview2048), "export": median(export), "exportParallel": wall / Double(urls.count)]
     print(String(
         format: "| %@ | %d | %.1f ms | %.0f ms | %.0f ms | %.0f ms | %.2f img/s | %.0f MB |",
         group.name, group.urls.count, median(header), median(preview2048), median(preview512), median(export),
@@ -201,3 +207,48 @@ Budgets (M1 baseline): PERF-3 cold photo switch < 200 ms for 45 MP (≈ Preview 
 PERF-4 export < 400 ms per 45 MP image (≈ 1 / throughput) · PERF-5 memory bounded · \
 PERF-2 1,000-photo album: first thumbnails < 300 ms, all < 3 s.
 """)
+
+// MARK: - Baselines (make bench-check)
+
+func machineModel() -> String {
+    var size = 0
+    sysctlbyname("hw.model", nil, &size, nil, 0)
+    var model = [CChar](repeating: 0, count: size)
+    sysctlbyname("hw.model", &model, &size, nil, 0)
+    return String(cString: model)
+}
+
+struct Baseline: Codable {
+    var machine: String
+    var results: [String: [String: Double]]
+}
+
+if let baselineOut {
+    let data = try JSONEncoder().encode(Baseline(machine: machineModel(), results: results))
+    try data.write(to: baselineOut)
+    print("Wrote baseline for \(machineModel()) to \(baselineOut.path)")
+}
+
+if let baselineCheck {
+    let baseline = try JSONDecoder().decode(Baseline.self, from: Data(contentsOf: baselineCheck))
+    if baseline.machine != machineModel() {
+        print("⚠︎ Baseline was recorded on \(baseline.machine); this is \(machineModel()). Comparing anyway, but timings may not be comparable.")
+    }
+    var regressions: [String] = []
+    for (set, metrics) in results {
+        for (name, value) in metrics {
+            guard let reference = baseline.results[set]?[name], reference > 0 else { continue }
+            let change = value / reference - 1
+            let line = String(format: "%@ %@: %.1f ms vs %.1f ms (%+.0f%%)", set, name, value, reference, change * 100)
+            // Parallel throughput is too noisy between runs to gate on; it's reported only.
+            let gated = name != "exportParallel"
+            let regressed = gated && change > 0.15
+            print(regressed ? "✘ \(line)" : (gated ? "✔ \(line)" : "· \(line)"))
+            if regressed { regressions.append(line) }
+        }
+    }
+    if !regressions.isEmpty {
+        print("\n\(regressions.count) metric(s) regressed by more than 15%.")
+        exit(1)
+    }
+}

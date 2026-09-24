@@ -14,8 +14,8 @@ jobs:
           fetch-depth: 0
       - name: Toolchain
         run: swift --version
-      - name: Test
-        run: make test
+      - name: Test with coverage
+        run: make coverage
       - name: Bundle app
         run: make app
       - name: Verify signature and sandbox entitlement

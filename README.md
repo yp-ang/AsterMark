@@ -13,7 +13,9 @@ A fast, Mac-native watermarking app for photographers. Apply your logo to a whol
 
 ```sh
 make test      # run unit tests
-make bench     # pipeline speed/memory benchmarks
+make coverage  # AsterCore line coverage
+make smoke     # end-to-end check of the sandboxed release app
+make bench     # pipeline speed/memory benchmarks (make bench-check compares with a baseline)
 make run       # build a release .app and launch it
 make install   # install to /Applications (falls back to ~/Applications)
 make dmg       # build/AsterMark-<version>.dmg
