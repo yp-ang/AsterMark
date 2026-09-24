@@ -22,7 +22,7 @@ Every requirement has an ID; phase docs reference these IDs.
 | IMG-2 | P0 | Supported inputs: JPEG, HEIC/HEIF (8/10-bit), PNG, TIFF (8/16-bit), WebP (read). |
 | IMG-3 | P1 | RAW input (CR3, NEF, ARW, RAF, DNG, …) via `CIRAWFilter`, rendered with camera defaults. Documented as "for quick delivery; edit RAWs in your editor first". |
 | IMG-4 | P0 | Honour EXIF orientation everywhere (preview, crop, export). |
-| IMG-5 | P0 | Full colour management: read embedded ICC profile (sRGB, Display P3, Adobe RGB, ProPhoto); untagged images assumed sRGB; working space linear extended sRGB, 16-bit float. |
+| IMG-5 | P0 | Full colour management: read embedded ICC profile (sRGB, Display P3, Adobe RGB, ProPhoto); untagged images assumed sRGB; working space extended sRGB (gamma-encoded, half float) so opacity matches Photoshop (D12). |
 | IMG-6 | P0 | Sort by filename, capture date, or modification date. Filter: all / edited / needs review / excluded. |
 | IMG-7 | P1 | Read XMP/embedded star ratings and colour labels (from Lightroom / Photo Mechanic); filter by rating. |
 | IMG-8 | P1 | Watch album folder; new files appear live (FSEvents). |

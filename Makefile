@@ -2,6 +2,7 @@
 #
 #   make            build debug
 #   make test       run unit tests
+#   make bench      pipeline benchmarks (BENCH_ARGS="--dir ~/Pictures/Shoot --count 20")
 #   make app        release .app in build/
 #   make run        build + launch the .app
 #   make install    copy to /Applications (or ~/Applications)
@@ -30,7 +31,7 @@ INSTALL_DIR := $(shell [ -w /Applications ] && echo /Applications || echo $(HOME
 
 export BUNDLE_ID MARKETING_VERSION BUILD_NUMBER SIGN_IDENTITY NOTARY_PROFILE
 
-.PHONY: all build test app run install dmg release clean lint format open-xcode
+.PHONY: all build test bench app run install dmg release clean lint format open-xcode
 
 all: build
 
@@ -39,6 +40,9 @@ build:
 
 test:
 	swift test $(TEST_FLAGS)
+
+bench:
+	swift run -c release Benchmarks $(BENCH_ARGS)
 
 app:
 	swift build -c release

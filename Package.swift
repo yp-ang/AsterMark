@@ -18,6 +18,11 @@ let package = Package(
             dependencies: ["AsterCore"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        .executableTarget(
+            name: "Benchmarks",
+            dependencies: ["AsterCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .testTarget(
             name: "AsterCoreTests",
             dependencies: ["AsterCore"],

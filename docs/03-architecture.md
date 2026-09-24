@@ -32,6 +32,7 @@ AsterMark/
 │       ├── App/              # @main, commands/menus, settings scene
 │       ├── Features/         # Browser, Canvas, Inspector, Library, Crop, Export, Review
 │       └── Support/          # Haptics, keyboard handling, accessibility helpers
+│   └── Benchmarks/           # `make bench`: pipeline speed and memory against PERF budgets
 ├── Tests/AsterCoreTests/
 ├── Resources/                # Info.plist, entitlements, icon
 ├── scripts/                  # bundle / dmg / notarize helpers
@@ -68,7 +69,7 @@ Photo (after orientation) ─┐
 1. Load source as `CIImage` (tiled, lazily decoded) with orientation applied; RAW via `CIRAWFilter`.
 2. Crop (`cropped(to:)`), then scale (`CILanczosScaleTransform`) if the recipe resizes, then optional sharpen (`CIUnsharpMask`).
 3. Watermark layers: `CIImage(watermark)` → affine transform (scale/rotate/translate) → `CIColorMatrix` alpha for opacity → blend filter (`CISourceOverCompositing` / `CIMultiplyBlendMode` / …).
-4. Render with the shared `CIContext` (`workingColorSpace: extendedLinearSRGB`, `workingFormat: .RGBAh`) into the output colour space.
+4. Render with the shared `CIContext` (`workingColorSpace: extendedSRGB` gamma-encoded per D12, `workingFormat: .RGBAh`) into the output colour space.
 5. Encode with `CGImageDestination`, copying/filtering metadata via `CGImageMetadata` per `MetadataPolicy`; write to temp then atomically move.
 6. `ExportEngine` (actor) runs a `TaskGroup` with concurrency = active performance cores − 1, backpressure to bound memory.
 

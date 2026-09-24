@@ -13,8 +13,8 @@
 | Phase | Scope | Status |
 |---|---|---|
 | [0](phases/phase-00-foundations.md) | Foundations: package, Makefile, bundle, sign, CI | ✅ Done |
-| [1](phases/phase-01-image-pipeline.md) | Image pipeline & colour management | ⏳ Next |
-| [2](phases/phase-02-data-model.md) | Data model, projects, undo | |
+| [1](phases/phase-01-image-pipeline.md) | Image pipeline & colour management | ✅ Done |
+| [2](phases/phase-02-data-model.md) | Data model, projects, undo | ⏳ Next |
 | [3](phases/phase-03-app-shell.md) | App shell, albums, watermark library | |
 | [4](phases/phase-04-canvas.md) | Interactive canvas (drag / resize / rotate / snap) | |
 | [5](phases/phase-05-watermark-styling.md) | Layers, blend modes, adaptive, text, tiles | |
