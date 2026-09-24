@@ -14,7 +14,7 @@
 - [x] 3.4 Selection model: current photo index, multi-select (⌘-click, ⇧-click) for later batch ops.
 - [x] 3.5 Keyboard: ←/→ and X through a local key monitor that ignores text fields (bare-key menu shortcuts would steal arrows from text editing). The Photo menu lists every action.
 - [x] 3.6 Folder watcher (FSEvents) updating the photo list live; removed files shown as missing, not silently dropped.
-- [x] 3.7 Watermark library sidebar: drag-in PNG/PDF/SVG, thumbnails on a checkerboard, rename (dialog), delete with confirmation, "Set as default".
+- [x] 3.7 Watermark library sidebar: drag-in PNG/TIFF (vector PDF/SVG in Phase 5), thumbnails on a checkerboard, rename (dialog), delete with confirmation, "Set as default".
 - [x] 3.8 Watermark sets: create/rename/duplicate; drag a watermark onto the canvas adds a layer to the current set.
 - [x] 3.9 Empty states: no album ("Drop a folder of photos here"), no watermarks ("Drop a PNG logo here"), empty folder.
 - [x] 3.10 Settings window (⌘,): General (canvas background, default sort), Photographer profile (for IPTC — used in Phase 8), Presets (open user presets.json).
