@@ -33,4 +33,4 @@ All P0 requirements verified; no open P0/P1 bugs; PERF budgets met on M1 and on 
 - `make test`: 163 tests in 41 suites pass. `make coverage`: 92.4% lines, 85.2% functions.
 - `make smoke`: 7/7 checks pass.
 - `make bench-check` against the M5 (Mac17,2) baseline: all gated metrics within threshold.
-- CI (GitHub Actions, macos-15) has been green for every push through Phase 9.
+- CI (GitHub Actions, macos-15) is green at `c3faca7`. It first caught two things this Mac didn't: `MXMetricPayload` is unavailable in the macOS 15 SDK (removed; only diagnostics exist on macOS), and the virtual GPU differs by up to ~8/255 after resampling (tolerance widened for that one golden case).
