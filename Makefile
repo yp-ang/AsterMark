@@ -12,10 +12,13 @@
 #   make release    signed + notarised DMG (needs SIGN_IDENTITY and NOTARY_PROFILE)
 
 BUNDLE_ID         ?= app.astermark.AsterMark
-MARKETING_VERSION ?= 0.1.0
+# Version from the latest tag (v1.2.3 → 1.2.3), else 0.1.0.
+MARKETING_VERSION ?= $(shell v=$$(git describe --tags --abbrev=0 2>/dev/null); echo $${v:-v0.1.0} | sed 's/^v//')
 BUILD_NUMBER      ?= $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
 SIGN_IDENTITY     ?= -
 NOTARY_PROFILE    ?=
+# UNIVERSAL=1 builds arm64 + x86_64 and merges them with lipo (default for `make release`).
+UNIVERSAL         ?= 0
 
 BUILD_DIR := build
 APP       := $(BUILD_DIR)/AsterMark.app
@@ -62,9 +65,18 @@ bench:
 	swift run -c release Benchmarks $(BENCH_ARGS)
 
 app:
+ifeq ($(UNIVERSAL),1)
+	swift build -c release --triple arm64-apple-macosx15.0 --product AsterMark
+	swift build -c release --triple x86_64-apple-macosx15.0 --product AsterMark
+	@mkdir -p $(BUILD_DIR)/universal
+	lipo -create -output $(BUILD_DIR)/universal/AsterMark \
+		.build/arm64-apple-macosx/release/AsterMark .build/x86_64-apple-macosx/release/AsterMark
+	scripts/bundle.sh $(BUILD_DIR)/universal $(BUILD_DIR)
+else
 	swift build -c release
 	@mkdir -p $(BUILD_DIR)
 	scripts/bundle.sh "$$(swift build -c release --show-bin-path)" $(BUILD_DIR)
+endif
 
 run: app
 	open $(APP)
@@ -82,7 +94,7 @@ dmg: app
 release:
 	@test "$(SIGN_IDENTITY)" != "-" || (echo "Set SIGN_IDENTITY to your Developer ID Application identity"; exit 1)
 	@test -n "$(NOTARY_PROFILE)" || (echo "Set NOTARY_PROFILE (xcrun notarytool store-credentials)"; exit 1)
-	$(MAKE) dmg
+	$(MAKE) dmg UNIVERSAL=1
 
 lint:
 	@command -v swiftlint >/dev/null && swiftlint lint --quiet || echo "swiftlint not installed (brew install swiftlint) — skipped"

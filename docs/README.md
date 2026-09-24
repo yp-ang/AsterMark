@@ -7,6 +7,8 @@
 | [03 — Architecture](03-architecture.md) | Stack, modules, coordinate model, render & export pipeline, persistence |
 | [04 — Design guidelines](04-design-guidelines.md) | Layout, visual language, interaction rules, keyboard map |
 | [05 — Decisions](05-decisions.md) | Decision log (ADRs), including defaults awaiting confirmation |
+| [Releasing](RELEASING.md) | Signing, notarisation, GitHub releases, per-release checklist, Sparkle plan |
+| [Privacy](PRIVACY.md) | What AsterMark stores and what it never does |
 
 ## Roadmap
 
@@ -23,6 +25,6 @@
 | [8](phases/phase-08-export-metadata.md) | Export recipes & metadata | ✅ Done |
 | [9](phases/phase-09-polish-integration.md) | Polish, accessibility, macOS integration | ✅ Done (3 deferrals) |
 | [10](phases/phase-10-quality.md) | Quality & performance | ✅ Done (manual checks listed) |
-| [11](phases/phase-11-release.md) | Sign, notarise, distribute | ⏳ Next |
+| [11](phases/phase-11-release.md) | Sign, notarise, distribute | ✅ Pipeline ready (needs your Developer ID) |
 
-**MVP (beta)** = all P0 requirements, reached at the end of Phase 8 (P1 items within phases 1–8 may slip to 1.0).
+**Where things stand (2026-09-25):** all phases are built and pass automated checks: 163 unit, golden and parity tests (92% coverage of AsterCore), a 7-check sandboxed smoke test, benchmarks, and green CI. What remains needs a person or an account: the manual checks in Phase 10 (Instruments, VoiceOver, a beta on real shoots), your Developer ID for signing and notarising, choosing a licence, and the deferred items (String Catalog and App Intents need Xcode; Sparkle needs hosting decisions; carousel split and hot folder are P2).

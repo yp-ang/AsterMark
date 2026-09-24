@@ -2,7 +2,7 @@
 
 A fast, Mac-native watermarking app for photographers. Apply your logo to a whole shoot in one click, fix the exceptions with a drag, crop for Instagram and Facebook, and export every deliverable in one pass. Originals are never modified.
 
-> Status: **Phase 9 complete**: the full workflow plus app icon, welcome screen, keyboard shortcut reference, Finder service, shareable presets and a Lightroom export action. See [`docs/`](docs/README.md) for the spec and roadmap.
+> Status: **all 12 phases built (beta 0.1.0).** Every automated check passes; hands-on review, signing and a licence are still to do. See [docs/README.md](docs/README.md). See [`docs/`](docs/README.md) for the spec and roadmap.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ make smoke     # end-to-end check of the sandboxed release app
 make bench     # pipeline speed/memory benchmarks (make bench-check compares with a baseline)
 make run       # build a release .app and launch it
 make install   # install to /Applications (falls back to ~/Applications)
-make dmg       # build/AsterMark-<version>.dmg
+make dmg       # build/AsterMark-<version>.dmg (UNIVERSAL=1 for Apple silicon + Intel)
 ```
 
 Open in Xcode (optional): `make open-xcode`.
@@ -29,6 +29,8 @@ Open in Xcode (optional): `make open-xcode`.
 xcrun notarytool store-credentials AsterMarkNotary   # once
 make release SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=AsterMarkNotary
 ```
+
+Full steps, GitHub release automation and the release checklist: [docs/RELEASING.md](docs/RELEASING.md). Privacy: [docs/PRIVACY.md](docs/PRIVACY.md). Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Try it
 
