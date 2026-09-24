@@ -30,7 +30,7 @@ public enum Encoder {
 
         var properties = metadata ?? [:]
         switch format {
-        case let .jpeg(quality), let .heic(quality):
+        case let .jpeg(quality):
             properties[kCGImageDestinationLossyCompressionQuality] = min(max(quality, 0), 1)
         case let .tiff(_, compressed):
             var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]

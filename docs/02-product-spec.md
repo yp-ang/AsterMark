@@ -19,8 +19,8 @@ Every requirement has an ID; phase docs reference these IDs.
 | ID | Pri | Requirement |
 |---|---|---|
 | IMG-1 | P0 | Open a folder (album) by picker, drag-and-drop onto window/Dock icon, or File ▸ Open Recent. Optional recursive scan. |
-| IMG-2 | P0 | Supported inputs: JPEG, HEIC/HEIF (8/10-bit), PNG, TIFF (8/16-bit), WebP (read). |
-| IMG-3 | P1 | RAW input (CR3, NEF, ARW, RAF, DNG, …) via `CIRAWFilter`, rendered with camera defaults. Documented as "for quick delivery; edit RAWs in your editor first". |
+| IMG-2 | P0 | Supported inputs: JPEG, PNG, TIFF (8/16-bit): finished exports from Lightroom, Capture One, Photoshop etc. |
+| IMG-3 | — | ~~RAW input~~: out of scope (D14). Photos are edited in other apps first. |
 | IMG-4 | P0 | Honour EXIF orientation everywhere (preview, crop, export). |
 | IMG-5 | P0 | Full colour management: read embedded ICC profile (sRGB, Display P3, Adobe RGB, ProPhoto); untagged images assumed sRGB; working space extended sRGB (gamma-encoded, half float) so opacity matches Photoshop (D12). |
 | IMG-6 | P0 | Sort by filename, capture date, or modification date. Filter: all / edited / needs review / excluded. |
@@ -85,7 +85,7 @@ Every requirement has an ID; phase docs reference these IDs.
 | EXP-1 | P0 | **Export recipes**: named output definitions — destination folder, format, size, crop preset, watermark set, metadata policy, naming. |
 | EXP-2 | P0 | Run one or more recipes in a single pass (e.g. "Client full-res" + "Instagram 3:4" + "Facebook 2048"). |
 | EXP-3 | P0 | Size modes: original (default), long edge px, short edge px, exact W×H (from crop preset), percentage, megapixels. Never upscale unless explicitly allowed. |
-| EXP-4 | P0 | Formats: JPEG (quality 0–100, default 90), HEIC (quality), PNG, TIFF (8/16-bit, LZW/none). "Same as source" option. |
+| EXP-4 | P0 | Formats: JPEG (quality 0–100, default 90), PNG, TIFF (8/16-bit, LZW/none). "Same as source" option. |
 | EXP-5 | P1 | File-size limit for JPEG (binary-search quality to fit, e.g. ≤ 8 MB). |
 | EXP-6 | P0 | Output colour space: keep source profile, or convert to sRGB (default for social recipes), Display P3. Always embed the profile. |
 | EXP-7 | P1 | Output sharpening for screen after downscale: None / Low / Standard / High. Resampling: Lanczos. |
@@ -144,8 +144,8 @@ Every requirement has an ID; phase docs reference these IDs.
 
 ## Out of scope (1.0)
 
-Photo editing (exposure, colour), culling beyond exclude/rating filter, cloud sync, Windows, video watermarking.
+Photo editing (exposure, colour), RAW and HEIC files, culling beyond exclude/rating filter, cloud sync, Windows, video watermarking.
 
 ## Defaults assumed (see `05-decisions.md`)
 
-Distribution: direct download (signed, notarised DMG). Minimum OS: macOS 15 Sequoia. RAW input: yes (P1). Social recipes strip GPS by default; client recipes keep all metadata.
+Distribution: direct download (signed, notarised DMG). Minimum OS: macOS 15 Sequoia. Inputs JPEG/PNG/TIFF only; no RAW or HEIC (D14). Social recipes strip GPS by default; client recipes keep all metadata.

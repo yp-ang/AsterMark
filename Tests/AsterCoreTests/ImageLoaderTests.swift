@@ -43,7 +43,7 @@ struct ImageLoaderTests {
         #expect(info.pixelSize == CGSize(width: 64, height: 32))
         #expect(info.orientation == UInt32(orientation))
         #expect(info.orientedSize == (orientation >= 5 ? CGSize(width: 32, height: 64) : CGSize(width: 64, height: 32)))
-        #expect(!info.isRAW)
+        #expect(info.isSupported)
     }
 
     @Test(arguments: 1...8)

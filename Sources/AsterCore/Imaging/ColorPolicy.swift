@@ -11,11 +11,10 @@ public enum OutputColorSpace: String, Codable, Sendable, CaseIterable {
 
 public enum ColorPolicy {
     /// Resolves the output colour space.
-    /// Untagged or non-RGB sources fall back to sRGB; RAW sources (no embedded profile) to Display P3.
+    /// Untagged or non-RGB sources fall back to sRGB.
     public static func outputColorSpace(
         _ choice: OutputColorSpace,
-        source: CGColorSpace?,
-        isRAW: Bool
+        source: CGColorSpace?
     ) -> CGColorSpace {
         switch choice {
         case .sRGB:
@@ -26,7 +25,7 @@ public enum ColorPolicy {
             if let source, source.model == .rgb {
                 return source
             }
-            return CGColorSpace(name: isRAW ? CGColorSpace.displayP3 : CGColorSpace.sRGB)!
+            return CGColorSpace(name: CGColorSpace.sRGB)!
         }
     }
 }

@@ -100,9 +100,8 @@ defer { try? FileManager.default.removeItem(at: workDir) }
 
 var groups: [(name: String, urls: [URL])] = []
 if let directory {
-    let supported: [UTType] = [.jpeg, .heic, .png, .tiff, .rawImage]
     let urls = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-        .filter { url in UTType(filenameExtension: url.pathExtension).map { t in supported.contains { t.conforms(to: $0) } } ?? false }
+        .filter { UTType(filenameExtension: $0.pathExtension).map(ImageSourceInfo.isSupported) ?? false }
         .sorted { $0.lastPathComponent < $1.lastPathComponent }
         .prefix(count)
     groups.append((directory.lastPathComponent, Array(urls)))

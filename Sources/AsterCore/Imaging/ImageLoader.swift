@@ -19,7 +19,7 @@ public struct SourceImage: @unchecked Sendable {
     // CIImage is an immutable recipe; rendering happens later on a CIContext.
     public let image: CIImage
     public let info: ImageSourceInfo
-    /// Colour space the file was encoded in (`nil` for RAW or untagged images).
+    /// Colour space the file was encoded in (`nil` if untagged).
     public let colorSpace: CGColorSpace?
 }
 
@@ -32,23 +32,18 @@ public struct ImageLoader: PreviewLoading {
     public init() {}
 
     /// Decodes a downsampled, orientation-corrected image whose long edge is at most `maxPixel`.
-    /// Much faster than a full decode: ImageIO decodes JPEG/HEIC at reduced scale directly.
+    /// Much faster than a full decode: ImageIO decodes JPEG at reduced scale directly.
     public func preview(url: URL, maxPixel: Int) throws -> PreviewImage {
         let info = try ImageSourceInfo(url: url)
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
         else { throw ImagingError.unreadable(url) }
 
-        var options: [CFString: Any] = [
+        let options: [CFString: Any] = [
             kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true,
         ]
-        // RAW files carry a large embedded JPEG; developing the RAW just to browse is far too slow.
-        if info.isRAW {
-            options[kCGImageSourceCreateThumbnailFromImageIfAbsent] = true
-        } else {
-            options[kCGImageSourceCreateThumbnailFromImageAlways] = true
-        }
 
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         else { throw ImagingError.decodeFailed(url) }
@@ -58,25 +53,13 @@ public struct ImageLoader: PreviewLoading {
     /// Opens the full-resolution image for export. Decoding is deferred until render time.
     public func fullResolution(url: URL) throws -> SourceImage {
         let info = try ImageSourceInfo(url: url)
-        let image: CIImage
-        let colorSpace: CGColorSpace?
-
-        if info.isRAW {
-            guard let raw = CIRAWFilter(imageURL: url), let output = raw.outputImage
-            else { throw ImagingError.decodeFailed(url) }
-            image = output
-            colorSpace = nil
-        } else {
-            guard let decoded = CIImage(contentsOf: url, options: [.applyOrientationProperty: true])
-            else { throw ImagingError.decodeFailed(url) }
-            image = decoded
-            colorSpace = decoded.colorSpace
-        }
+        guard let image = CIImage(contentsOf: url, options: [.applyOrientationProperty: true])
+        else { throw ImagingError.decodeFailed(url) }
 
         let origin = image.extent.origin
         let normalized = origin == .zero
             ? image
             : image.transformed(by: CGAffineTransform(translationX: -origin.x, y: -origin.y))
-        return SourceImage(image: normalized, info: info, colorSpace: colorSpace)
+        return SourceImage(image: normalized, info: info, colorSpace: image.colorSpace)
     }
 }

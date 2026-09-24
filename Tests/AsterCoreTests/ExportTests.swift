@@ -49,12 +49,11 @@ struct SizeModeTests {
 struct ColorPolicyTests {
     @Test func resolvesChoices() {
         let adobe = CGColorSpace(name: CGColorSpace.adobeRGB1998)!
-        #expect(ColorPolicy.outputColorSpace(.source, source: adobe, isRAW: false).name == CGColorSpace.adobeRGB1998)
-        #expect(ColorPolicy.outputColorSpace(.sRGB, source: adobe, isRAW: false).name == CGColorSpace.sRGB)
-        #expect(ColorPolicy.outputColorSpace(.source, source: nil, isRAW: false).name == CGColorSpace.sRGB)
-        #expect(ColorPolicy.outputColorSpace(.source, source: nil, isRAW: true).name == CGColorSpace.displayP3)
+        #expect(ColorPolicy.outputColorSpace(.source, source: adobe).name == CGColorSpace.adobeRGB1998)
+        #expect(ColorPolicy.outputColorSpace(.sRGB, source: adobe).name == CGColorSpace.sRGB)
+        #expect(ColorPolicy.outputColorSpace(.source, source: nil).name == CGColorSpace.sRGB)
         let gray = CGColorSpace(name: CGColorSpace.genericGrayGamma2_2)!
-        #expect(ColorPolicy.outputColorSpace(.source, source: gray, isRAW: false).name == CGColorSpace.sRGB)
+        #expect(ColorPolicy.outputColorSpace(.source, source: gray).name == CGColorSpace.sRGB)
     }
 }
 
@@ -87,16 +86,6 @@ struct ExportTests {
         if format.isDeep {
             #expect(info.bitDepth == 16)
         }
-    }
-
-    @Test(.enabled(if: Encoder.canEncode(.heic)))
-    func writesHEIC() throws {
-        let dir = try Fixtures.tempDirectory()
-        let src = dir.appendingPathComponent("src.png")
-        try Fixtures.write(Fixtures.quadrants(width: 80, height: 60), to: src, type: .png)
-        let out = dir.appendingPathComponent("out.heic")
-        try exporter.export(source: src, layers: [], settings: ExportSettings(format: .heic(quality: 0.8)), to: out)
-        #expect(try ImageSourceInfo(url: out).utType == .heic)
     }
 
     @Test func orientedSourceIsWrittenUpright() throws {

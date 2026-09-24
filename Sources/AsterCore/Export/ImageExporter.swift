@@ -61,11 +61,7 @@ public struct ImageExporter: Sendable {
         let format = settings.format.resolved(for: source.info)
 
         let composite = Compositor.render(base: source.image, layers: layers, spec: settings.render)
-        let colorSpace = ColorPolicy.outputColorSpace(
-            settings.colorSpace,
-            source: source.colorSpace,
-            isRAW: source.info.isRAW
-        )
+        let colorSpace = ColorPolicy.outputColorSpace(settings.colorSpace, source: source.colorSpace)
         let bitmap = try context.makeCGImage(composite, colorSpace: colorSpace, deep: format.isDeep)
         let size = CGSize(width: bitmap.width, height: bitmap.height)
 

@@ -7,7 +7,7 @@
 | Language | Swift 6 (strict concurrency, language mode 6) |
 | UI | SwiftUI for app chrome; AppKit (`NSViewRepresentable` + CALayer) for the canvas |
 | Rendering | Core Image on a Metal-backed `CIContext` (one shared instance) — built-in filters only, no custom Metal kernels (keeps the build Xcode-free) |
-| Decode / encode | ImageIO (`CGImageSource`, `CGImageDestination`); `CIRAWFilter` for RAW |
+| Decode / encode | ImageIO (`CGImageSource`, `CGImageDestination`): JPEG, PNG and TIFF only (D14) |
 | Analysis | Vision (saliency, faces) — P1/P2 |
 | State | Observation (`@Observable`), `@MainActor` view models, actors for caches/export |
 | Persistence | Codable JSON + security-scoped bookmarks |
@@ -66,7 +66,7 @@ Photo (after orientation) ─┐
 4. On gesture end, the new `Placement` is committed to the model (one undo step).
 
 ### Export (full resolution)
-1. Load source as `CIImage` (tiled, lazily decoded) with orientation applied; RAW via `CIRAWFilter`.
+1. Load source as `CIImage` (tiled, lazily decoded) with orientation applied.
 2. Crop (`cropped(to:)`), then scale (`CILanczosScaleTransform`) if the recipe resizes, then optional sharpen (`CIUnsharpMask`).
 3. Watermark layers: `CIImage(watermark)` → affine transform (scale/rotate/translate) → `CIColorMatrix` alpha for opacity → blend filter (`CISourceOverCompositing` / `CIMultiplyBlendMode` / …).
 4. Render with the shared `CIContext` (`workingColorSpace: extendedSRGB` gamma-encoded per D12, `workingFormat: .RGBAh`) into the output colour space.

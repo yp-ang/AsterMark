@@ -41,7 +41,14 @@ public struct ImageSourceInfo: Sendable, Hashable {
 
     public var utType: UTType? { typeIdentifier.flatMap(UTType.init) }
 
-    public var isRAW: Bool { utType?.conforms(to: .rawImage) ?? false }
+    /// AsterMark watermarks finished exports from other editors: JPEG, PNG and TIFF only.
+    public static let supportedTypes: [UTType] = [.jpeg, .png, .tiff]
+
+    public static func isSupported(_ type: UTType) -> Bool {
+        supportedTypes.contains { type.conforms(to: $0) }
+    }
+
+    public var isSupported: Bool { utType.map(Self.isSupported) ?? false }
 
     static func parseExifDate(_ string: String) -> Date? {
         let formatter = DateFormatter()
