@@ -16,8 +16,8 @@
 | [1](phases/phase-01-image-pipeline.md) | Image pipeline & colour management | ✅ Done |
 | [2](phases/phase-02-data-model.md) | Data model, projects, undo | ✅ Done |
 | [3](phases/phase-03-app-shell.md) | App shell, albums, watermark library | ✅ Done (needs visual review) |
-| [4](phases/phase-04-canvas.md) | Interactive canvas (drag / resize / rotate / snap) | ⏳ Next |
-| [5](phases/phase-05-watermark-styling.md) | Layers, blend modes, adaptive, text, tiles | |
+| [4](phases/phase-04-canvas.md) | Interactive canvas (drag / resize / rotate / snap) | ✅ Done (needs hands-on review) |
+| [5](phases/phase-05-watermark-styling.md) | Layers, blend modes, adaptive, text, tiles | ⏳ Next |
 | [6](phases/phase-06-batch-review.md) | Batch apply & review | |
 | [7](phases/phase-07-crop-social.md) | Crop & social formats | |
 | [8](phases/phase-08-export-metadata.md) | Export recipes & metadata | |

@@ -2,7 +2,7 @@
 
 A fast, Mac-native watermarking app for photographers. Apply your logo to a whole shoot in one click, fix the exceptions with a drag, crop for Instagram and Facebook, and export every deliverable in one pass. Originals are never modified.
 
-> Status: **Phase 3 complete**: open albums, browse photos, manage watermarks and layouts. Dragging and resizing watermarks on the photo arrives in Phase 4. See [`docs/`](docs/README.md) for the spec and roadmap.
+> Status: **Phase 4 complete**: drag, resize, rotate and snap watermarks on the photo, then apply the layout to the whole album. See [`docs/`](docs/README.md) for the spec and roadmap.
 
 ## Requirements
 
@@ -33,7 +33,8 @@ make release SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY
 1. `make run`
 2. Drop a folder of JPEG/PNG/TIFF photos onto the window (or File ▸ Open Folder…, ⌘O).
 3. Drop a transparent PNG logo onto the **Watermarks** sidebar, then drag it onto the photo. It appears on every photo.
-4. Use ← / → to move between photos and X to exclude one. ⌘D applies the current photo's layout to all photos.
+4. Click the logo to select it: drag to move (it snaps to edges, the centre and margins), drag a corner to resize (⌥ from centre), drag the round handle to rotate (⇧ for 15° steps), or pinch/rotate on the trackpad. Keys 1–9 snap to positions; arrows nudge (⇧ ×10); ⌫ removes it; esc deselects.
+5. With nothing selected, ← / → move between photos and X excludes one. ⌘D applies the current photo's layout to all photos. ⌘0 / ⌘1 / ⌘= / ⌘− zoom; \\ toggles before/after; H hides handles.
 
 ## Project layout
 
