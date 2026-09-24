@@ -23,11 +23,14 @@ AsterMark/
 ├── Sources/
 │   ├── AsterCore/            # Pure logic + rendering. No SwiftUI. Fully unit-tested.
 │   │   ├── Geometry/         # NormalizedRect, Anchor, Placement math
-│   │   ├── Model/            # Watermark, Layer, WatermarkSet, CropSpec, PhotoEdit, Album, Recipe
+│   │   ├── Model/            # Watermark, Layer, WatermarkSet, CropSpec, PhotoEdit, AlbumProject, Recipe
 │   │   ├── Presets/          # Social size presets (built-in + user JSON override)
 │   │   ├── Imaging/          # ImageLoader, PreviewCache, Compositor, ColorPolicy
 │   │   ├── Export/           # ExportEngine, Encoder, MetadataPolicy, NamingTemplate
-│   │   └── Persistence/      # ProjectStore, BookmarkStore
+│   │   ├── Persistence/      # ProjectStore, Bookmarks, AppPaths
+│   │   ├── Library/          # WatermarkLibrary, WatermarkPreparer (trim + hash)
+│   │   ├── Album/            # AlbumScanner, PhotoRef
+│   │   └── Editing/          # AlbumEditor: current photo, edit target, undoable intents
 │   └── AsterMarkApp/         # The macOS app (SwiftUI + AppKit canvas)
 │       ├── App/              # @main, commands/menus, settings scene
 │       ├── Features/         # Browser, Canvas, Inspector, Library, Crop, Export, Review

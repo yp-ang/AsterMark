@@ -2,7 +2,7 @@
 
 A fast, Mac-native watermarking app for photographers. Apply your logo to a whole shoot in one click, fix the exceptions with a drag, crop for Instagram and Facebook, and export every deliverable in one pass. Originals are never modified.
 
-> Status: **Phase 1 complete** (image pipeline). See [`docs/`](docs/README.md) for the spec and roadmap.
+> Status: **Phase 2 complete** (data model, projects, undo). See [`docs/`](docs/README.md) for the spec and roadmap.
 
 ## Requirements
 
