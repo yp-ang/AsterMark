@@ -248,6 +248,31 @@ public final class AlbumEditor {
         }
     }
 
+    /// Sets crops for many photos in one undo step (e.g. "Smart Crop All").
+    public func setCrops(_ crops: [String: CropSpec], recipeID: UUID, photoAspects: [String: Double]) {
+        change("Crop Photos") { project in
+            for (key, crop) in crops {
+                project.updateEdit(for: key) { edit in
+                    edit.outputs[recipeID.uuidString, default: OutputEdit()].crop = crop
+                    edit.sourceAspect = photoAspects[key]
+                }
+            }
+        }
+    }
+
+    /// Removes crops for one output from many photos, so the recipe's default crop applies again.
+    public func clearCrops(_ keys: [String], recipeID: UUID) {
+        change("Reset Crop") { project in
+            for key in keys {
+                project.updateEdit(for: key) { $0.outputs[recipeID.uuidString]?.crop = nil }
+            }
+        }
+    }
+
+    public func setSelectedRecipes(_ ids: [UUID]) {
+        change("Choose Outputs") { $0.selectedRecipeIDs = ids }
+    }
+
     public func setIncludeSubfolders(_ include: Bool) {
         change("Include Subfolders") { $0.includeSubfolders = include }
     }

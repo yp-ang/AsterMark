@@ -41,7 +41,7 @@ final class KeyMonitor {
         guard modifiers.subtracting(.shift).isEmpty else { return false }
         let shift = modifiers.contains(.shift)
         let step = shift ? 10.0 : 1.0
-        let layerSelected = model.hasSelectedLayer
+        let layerSelected = model.hasSelectedLayer && !session.isCropping
 
         switch event.specialKey {
         case .rightArrow?:
@@ -69,8 +69,13 @@ final class KeyMonitor {
             break
         }
         if event.keyCode == 53 { // esc
+            if session.isCropping { session.cancelCrop(); return true }
             guard session.selectedLayerID != nil else { return false }
             session.selectedLayerID = nil
+            return true
+        }
+        if event.keyCode == 36 || event.keyCode == 76, session.isCropping { // return / enter
+            session.commitCrop()
             return true
         }
 
@@ -90,6 +95,10 @@ final class KeyMonitor {
             session.showHandles.toggle()
         case "g":
             session.viewMode = session.viewMode == .grid ? .canvas : .grid
+        case "c":
+            if session.isCropping { session.commitCrop() } else { session.beginCrop() }
+        case "o":
+            session.showSafeZones.toggle()
         default:
             return false
         }

@@ -99,9 +99,27 @@ struct MainView: View {
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
-            Button("Crop", systemImage: "crop") {}
-                .disabled(true)
-                .help("Crop for Instagram and Facebook (coming in Phase 7)")
+            if let session = model.session {
+                Picker("Editing", selection: Binding(get: { session.editor.target }, set: { target in
+                    session.cancelCrop()
+                    session.editor.target = target
+                })) {
+                    Label("Master", systemImage: "photo").tag(EditTarget.master)
+                    Divider()
+                    ForEach(model.library.recipes) { recipe in
+                        Text(recipe.name).tag(EditTarget.output(recipe.id))
+                    }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                .help("Edit the master layout (all outputs) or one output's crop and layout")
+            }
+            Button(model.session?.isCropping == true ? "Done" : "Crop", systemImage: "crop") {
+                guard let session = model.session else { return }
+                if session.isCropping { session.commitCrop() } else { session.beginCrop() }
+            }
+            .disabled(model.session?.editor.currentPhoto == nil)
+            .help("Crop for Instagram and Facebook (C). ↩ to finish, esc to cancel")
             Button("Apply to All", systemImage: "square.stack.3d.down.right") { model.requestApplyToAll() }
                 .disabled(model.session?.editor.currentPhoto == nil)
                 .help("Use this photo's watermark layout on every photo (⌘D)")

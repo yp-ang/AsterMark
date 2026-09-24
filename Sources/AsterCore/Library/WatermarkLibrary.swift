@@ -135,12 +135,15 @@ public final class WatermarkLibrary {
         var watermarks: [Watermark] = []
         var sets: [WatermarkSet] = []
         var defaultWatermarkID: UUID?
+        /// `nil` in libraries saved before recipes existed; seeded with the starter recipes.
+        var recipes: [Recipe]?
     }
 
     public let directory: URL
     public private(set) var watermarks: [Watermark] = []
     public private(set) var sets: [WatermarkSet] = []
     public private(set) var defaultWatermarkID: UUID?
+    public private(set) var recipes: [Recipe] = Recipe.starterRecipes()
 
     private var indexURL: URL { directory.appendingPathComponent("library.json") }
 
@@ -150,6 +153,11 @@ public final class WatermarkLibrary {
             watermarks = index.watermarks
             sets = index.sets
             defaultWatermarkID = index.defaultWatermarkID
+            if let saved = index.recipes { recipes = saved }
+        }
+        // Crops are stored per recipe id, so seeded recipes must keep their ids across launches.
+        if (try? Data(contentsOf: indexURL)).flatMap({ try? JSONDecoder().decode(Index.self, from: $0) })?.recipes == nil {
+            try? persist()
         }
         backfillLuminance()
     }
@@ -381,11 +389,45 @@ public final class WatermarkLibrary {
         try persist()
     }
 
+    // MARK: - Recipes
+
+    public func recipe(id: UUID) -> Recipe? {
+        recipes.first { $0.id == id }
+    }
+
+    @discardableResult
+    public func addRecipe(_ recipe: Recipe) throws -> Recipe {
+        recipes.append(recipe)
+        try persist()
+        return recipe
+    }
+
+    public func updateRecipe(_ recipe: Recipe) throws {
+        guard let index = recipes.firstIndex(where: { $0.id == recipe.id }) else { throw LibraryError.notFound }
+        recipes[index] = recipe
+        try persist()
+    }
+
+    public func removeRecipe(id: UUID) throws {
+        recipes.removeAll { $0.id == id }
+        try persist()
+    }
+
+    @discardableResult
+    public func duplicateRecipe(id: UUID) throws -> Recipe {
+        guard var copy = recipe(id: id) else { throw LibraryError.notFound }
+        copy.id = UUID()
+        copy.name += " copy"
+        recipes.append(copy)
+        try persist()
+        return copy
+    }
+
     // MARK: - Persistence
 
     private func persist() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let index = Index(watermarks: watermarks, sets: sets, defaultWatermarkID: defaultWatermarkID)
+        let index = Index(watermarks: watermarks, sets: sets, defaultWatermarkID: defaultWatermarkID, recipes: recipes)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try encoder.encode(index).write(to: indexURL, options: .atomic)

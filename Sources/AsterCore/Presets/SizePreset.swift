@@ -79,3 +79,13 @@ public extension SizePreset {
         return builtIn.map { overrides[$0.id] ?? $0 } + user.filter { !builtInIDs.contains($0.id) }
     }
 }
+
+public extension SizePreset {
+    /// Built-ins merged with the user's `presets.json` (if present and valid).
+    static func load(userFile: URL) -> [SizePreset] {
+        guard let data = try? Data(contentsOf: userFile),
+              let user = try? JSONDecoder().decode([SizePreset].self, from: data)
+        else { return builtIn }
+        return merged(user: user)
+    }
+}

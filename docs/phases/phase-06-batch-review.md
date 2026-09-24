@@ -11,10 +11,10 @@
 - [x] 6.1 Apply to All (⌘D): writes current layout as album default; if overrides exist, sheet asks "Keep 37 custom placements / Replace all".
 - [x] 6.2 Copy/paste layout (⌘⇧C/⌘⇧V) to current or selected photos.
 - [x] 6.3 Neighbour prefetch follows the navigation direction (3 ahead, 1 behind).
-- [x] 6.4 Review grid (G, or the Photo/Grid switch in the toolbar): SwiftUI `LazyVGrid` of thumbnails composited by the real export `Compositor` (text, tiles and adaptive variants included) (watermark drawn with the same geometry at thumbnail scale), adjustable thumbnail size, multi-select, apply layout/set/exclude to selection, double-click to open.
+- [x] 6.4 Review grid (G, or the Photo/Grid switch in the toolbar): SwiftUI `LazyVGrid` of thumbnails composited by the real export `Compositor` (text, tiles and adaptive variants included), adjustable thumbnail size, multi-select, apply layout/set/exclude to selection, double-click to open.
 - [x] 6.5 Review checks (`ReviewAnalyzer`, pure; driven in the background by `AlbumSession`): watermark off the edge (rotated bounds), low contrast, covering a face (Vision on the 256 px thumbnail; faces cached per photo). Results are kept in memory and recomputed quickly after each change: only the photos whose layout changed, or every photo when the album default changes. They aren't saved in the project, because they depend on the library and the current files.
 - [x] 6.6 "Next needing review" (⌘→) and filter chips in filmstrip: All · Edited · Needs review · Excluded · ★ rating.
-- [x] 6.7 Read XMP ratings/labels (embedded + `.xmp` sidecars) for filtering.
+- [x] 6.7 Read XMP star ratings (embedded + `.xmp` sidecars) for filtering. Colour labels are deferred.
 - [x] 6.8 Tests: heuristics on synthetic images, apply-to-all override policies.
 
 ## Acceptance criteria

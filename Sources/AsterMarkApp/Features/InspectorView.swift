@@ -32,6 +32,9 @@ private struct PhotoInspector: View {
         let layers = editor.layers(for: key)
 
         Form {
+            if let recipe = session.currentRecipe {
+                OutputSection(session: session, key: key, recipe: recipe)
+            }
             if let id = session.selectedLayerID, let layer = layers.first(where: { $0.id == id }) {
                 SelectedLayerSection(session: session, key: key, layer: layer)
             }
@@ -500,5 +503,65 @@ private struct EffectsSection: View {
             begin: { action in session.editor.beginInteractiveChange(actionName: action) },
             end: { session.editor.endInteractiveChange() }
         )
+    }
+}
+
+/// Crop and size for the output being edited.
+private struct OutputSection: View {
+    let session: AlbumSession
+    let key: String
+    let recipe: Recipe
+
+    var body: some View {
+        Section("Output: \(recipe.name)") {
+            if session.isCropping {
+                Picker("Ratio", selection: Binding(get: { session.cropPresetID }, set: { session.chooseCropPreset($0) })) {
+                    ForEach(session.presets.filter { $0.aspect != nil }) { preset in
+                        Text(preset.name).tag(Optional(preset.id))
+                    }
+                    Text("Free").tag(String?.none)
+                }
+                HStack {
+                    Button("Cancel") { session.cancelCrop() }
+                    Spacer()
+                    Button("Done") { session.commitCrop() }
+                        .keyboardShortcut(.defaultAction)
+                }
+                Text("Drag the crop to move it; drag a corner to resize. ↩ to finish, esc to cancel.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                let crop = session.currentCrop
+                LabeledContent("Crop", value: session.preset(id: crop?.presetID)?.name ?? (crop == nil ? "None" : "Custom"))
+                LabeledContent("Size", value: sizeText(crop: crop))
+                Button("Adjust Crop…") { session.beginCrop() }
+                    .help("C")
+                HStack {
+                    Menu("Crop Selected") { cropMenu(keys: session.targetKeys) }
+                    Menu("Crop All") { cropMenu(keys: session.editor.photos.map(\.relativePath)) }
+                }
+                .disabled(session.cropAspect == nil && recipe.cropPresetID == nil)
+                Button("Reset Crop") { session.resetCrops(session.targetKeys) }
+                    .disabled(session.editor.project.edit(for: key).outputs[recipe.id.uuidString]?.crop == nil)
+                Toggle("Show safe zones", isOn: Binding(get: { session.showSafeZones }, set: { session.showSafeZones = $0 }))
+                    .help("What Instagram's 3:4 profile grid trims, or where Stories cover the photo (O)")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cropMenu(keys: [String]) -> some View {
+        Button("Centred") { Task { await session.applyCrop(presetID: nil, to: keys, smart: false) } }
+        Button("Smart (follow the subject)") { Task { await session.applyCrop(presetID: nil, to: keys, smart: true) } }
+    }
+
+    private func sizeText(crop: CropSpec?) -> String {
+        let photo = session.currentPhotoSize
+        guard photo.width > 0 else { return "—" }
+        let cropped = crop.map { CropMath.pixelSize(of: $0.rect, photo: photo) } ?? photo
+        let render = recipe.settings.render
+        let out = render.sizeMode.targetSize(for: cropped, allowUpscale: render.allowUpscale)
+        let from = "\(Int(cropped.width)) × \(Int(cropped.height))"
+        return out == cropped ? from : "\(from) → \(Int(out.width)) × \(Int(out.height))"
     }
 }

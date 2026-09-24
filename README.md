@@ -2,7 +2,7 @@
 
 A fast, Mac-native watermarking app for photographers. Apply your logo to a whole shoot in one click, fix the exceptions with a drag, crop for Instagram and Facebook, and export every deliverable in one pass. Originals are never modified.
 
-> Status: **Phase 6 complete**: a review grid and automatic flags for watermarks that cover faces, run off the edge or are hard to see, plus filters by rating and edit state. See [`docs/`](docs/README.md) for the spec and roadmap.
+> Status: **Phase 7 complete**: per-output crops for Instagram and Facebook (centred or subject-aware), with profile-grid and Stories safe zones. See [`docs/`](docs/README.md) for the spec and roadmap.
 
 ## Requirements
 
@@ -36,6 +36,7 @@ make release SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY
 4. Click the logo to select it: drag to move (it snaps to edges, the centre and margins), drag a corner to resize (⌥ from centre), drag the round handle to rotate (⇧ for 15° steps), or pinch/rotate on the trackpad. Keys 1–9 snap to positions; arrows nudge (⇧ ×10); ⌫ removes it; esc deselects.
 5. With nothing selected, ← / → move between photos and X excludes one. ⌘D applies the current photo's layout to all photos. ⌘0 / ⌘1 / ⌘= / ⌘− zoom; \\ toggles before/after; H hides handles.
 6. Press G for the review grid. Photos flagged ⚠︎ (face covered, off the edge, low contrast) can be stepped through with ⌘→ / ⌘←.
+7. Choose an output in the toolbar (e.g. **Instagram 3:4**) and press C to crop: drag to move, drag a corner to resize, ↩ to finish. Crop Selected / Crop All in the inspector does many photos at once, centred or following the subject. O shows what Instagram's grid trims.
 
 ## Project layout
 

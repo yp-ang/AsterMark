@@ -19,8 +19,8 @@
 | [4](phases/phase-04-canvas.md) | Interactive canvas (drag / resize / rotate / snap) | ✅ Done (needs hands-on review) |
 | [5](phases/phase-05-watermark-styling.md) | Layers, blend modes, adaptive, text, tiles | ✅ Done |
 | [6](phases/phase-06-batch-review.md) | Batch apply & review | ✅ Done |
-| [7](phases/phase-07-crop-social.md) | Crop & social formats | ⏳ Next |
-| [8](phases/phase-08-export-metadata.md) | Export recipes & metadata | |
+| [7](phases/phase-07-crop-social.md) | Crop & social formats | ✅ Done |
+| [8](phases/phase-08-export-metadata.md) | Export recipes & metadata | ⏳ Next |
 | [9](phases/phase-09-polish-integration.md) | Polish, accessibility, macOS integration | |
 | [10](phases/phase-10-quality.md) | Quality & performance | |
 | [11](phases/phase-11-release.md) | Sign, notarise, distribute | |

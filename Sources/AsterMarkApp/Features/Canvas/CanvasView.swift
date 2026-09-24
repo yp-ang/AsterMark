@@ -42,6 +42,13 @@ final class CanvasView: NSView {
     var canvasColor: NSColor = .init(white: 0.18, alpha: 1) {
         didSet { layer?.backgroundColor = canvasColor.cgColor }
     }
+    /// Crop mode: the full photo with an adjustable crop rect (unit space of the photo).
+    var isCropping = false { didSet { if isCropping != oldValue { syncLayers(); updateCropOverlay() } } }
+    var cropRect: NormalizedRect = .full { didSet { if cropRect != oldValue, cropDrag == nil { updateCropOverlay() } } }
+    /// Locked crop aspect (pixel width / height); `nil` for free cropping.
+    var cropAspect: Double?
+    /// Platform guides drawn over the frame when not cropping.
+    var safeZones: [SafeZone] = [] { didSet { if safeZones != oldValue { updateCropOverlay() } } }
 
     // MARK: Outputs
 
@@ -54,6 +61,8 @@ final class CanvasView: NSView {
     var onScale: ((Double) -> Void)?
     /// Long-edge pixels needed to stay sharp at the current zoom.
     var onNeedsResolution: ((Int) -> Void)?
+    /// Live crop changes while dragging in crop mode.
+    var onCropChange: ((NormalizedRect) -> Void)?
 
     // MARK: Layers
 
@@ -62,6 +71,8 @@ final class CanvasView: NSView {
     private let overlayLayer = CAShapeLayer()
     private let handlesLayer = CAShapeLayer()
     private let guidesLayer = CAShapeLayer()
+    private let cropShadeLayer = CAShapeLayer()
+    private let cropFrameLayer = CAShapeLayer()
     private var watermarkLayers: [UUID: CALayer] = [:]
 
     // MARK: Interaction state
@@ -124,6 +135,19 @@ final class CanvasView: NSView {
         guidesLayer.fillColor = nil
         guidesLayer.lineDashPattern = [4, 3]
 
+        for shape in [cropShadeLayer, cropFrameLayer] {
+            shape.actions = Self.noActions
+            shape.zPosition = 9
+            contentLayer.addSublayer(shape)
+        }
+        cropShadeLayer.fillRule = .evenOdd
+        cropFrameLayer.fillColor = nil
+        cropFrameLayer.strokeColor = NSColor.white.cgColor
+        cropFrameLayer.lineWidth = 1
+        cropFrameLayer.shadowOpacity = 0.4
+        cropFrameLayer.shadowRadius = 1
+        cropFrameLayer.shadowOffset = .zero
+
         setAccessibilityRole(.group)
         setAccessibilityLabel("Photo canvas")
     }
@@ -169,6 +193,7 @@ final class CanvasView: NSView {
         photoLayer.frame = imageRect
         photoLayer.shadowPath = CGPath(rect: photoLayer.bounds, transform: nil)
         syncLayers()
+        updateCropOverlay()
 
         let scale = imageRect.width / photoSize.width
         onScale?(scale)
@@ -196,7 +221,7 @@ final class CanvasView: NSView {
                 image?.contents = model.image
                 // Tile images already include opacity; the container blends the whole layer with the photo.
                 container.opacity = model.fillsFrame ? 1 : Float(model.placement.opacity)
-                container.isHidden = !model.isVisible || !showWatermarks
+                container.isHidden = !model.isVisible || !showWatermarks || isCropping
                 container.compositingFilter = model.blend.compositingFilterName
                 container.zPosition = CGFloat(index + 1)
                 if model.fillsFrame {
@@ -269,7 +294,8 @@ final class CanvasView: NSView {
     // MARK: Overlay (selection, handles, guides)
 
     private var selectedModel: CanvasLayerModel? {
-        layers.first { $0.id == selectedID && $0.isVisible && !$0.fillsFrame }
+        guard !isCropping else { return nil }
+        return layers.first { $0.id == selectedID && $0.isVisible && !$0.fillsFrame }
     }
 
     private func updateOverlay(guides: [SnapGuide] = []) {
@@ -337,7 +363,7 @@ final class CanvasView: NSView {
                 return .corner(model.id, index)
             }
         }
-        guard showWatermarks else { return .empty }
+        guard showWatermarks, !isCropping else { return .empty }
         for model in layers.reversed() where model.isVisible && !model.fillsFrame {
             if viewRect(for: model).contains(point, tolerance: 2) { return .layer(model.id) }
         }
@@ -359,6 +385,10 @@ final class CanvasView: NSView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let point = location(of: event)
+        if isCropping {
+            beginCropDrag(at: point)
+            return
+        }
 
         if event.clickCount == 2, case .empty = hit(at: point) {
             onZoom?(isFit ? .scale(1) : .fit)
@@ -392,8 +422,12 @@ final class CanvasView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let drag else { return }
         let point = location(of: event)
+        if cropDrag != nil {
+            continueCropDrag(to: point)
+            return
+        }
+        guard let drag else { return }
         var guides: [SnapGuide] = []
 
         switch drag {
@@ -433,6 +467,10 @@ final class CanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if cropDrag != nil {
+            cropDrag = nil
+            return
+        }
         defer {
             drag = nil
             live = nil
@@ -462,6 +500,17 @@ final class CanvasView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        if isCropping {
+            let point = location(of: event)
+            if cropCorner(at: point) != nil {
+                NSCursor.crosshair.set()
+            } else if cropViewRect.contains(point) {
+                NSCursor.openHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+            return
+        }
         switch hit(at: location(of: event)) {
         case .rotate: NSCursor.crosshair.set()
         case let .corner(_, index):
@@ -535,6 +584,127 @@ final class CanvasView: NSView {
     private var isFit: Bool {
         if case .fit = zoom { return true }
         return false
+    }
+
+    // MARK: Crop mode
+
+    private enum CropDrag {
+        case move(start: CGPoint, startRect: CGRect)
+        case resize(fixed: CGPoint, corner: Int)
+    }
+
+    private var cropDrag: CropDrag?
+
+    /// The crop rect in view space.
+    private var cropViewRect: CGRect {
+        let c = cropRect
+        return CGRect(x: imageRect.minX + c.x * imageRect.width, y: imageRect.minY + c.y * imageRect.height,
+                      width: c.width * imageRect.width, height: c.height * imageRect.height)
+    }
+
+    private func cropCorners(_ rect: CGRect) -> [CGPoint] {
+        [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+         CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY)]
+    }
+
+    private func cropCorner(at point: CGPoint) -> Int? {
+        cropCorners(cropViewRect).firstIndex { distance($0, point) <= 12 }
+    }
+
+    private func beginCropDrag(at point: CGPoint) {
+        let rect = cropViewRect
+        if let corner = cropCorner(at: point) {
+            cropDrag = .resize(fixed: cropCorners(rect)[(corner + 2) % 4], corner: corner)
+        } else if rect.contains(point) {
+            cropDrag = .move(start: point, startRect: rect)
+            NSCursor.closedHand.set()
+        }
+    }
+
+    private func continueCropDrag(to point: CGPoint) {
+        guard let cropDrag else { return }
+        var rect: CGRect
+        switch cropDrag {
+        case let .move(start, startRect):
+            rect = startRect.offsetBy(dx: point.x - start.x, dy: point.y - start.y)
+            rect.origin.x = min(max(rect.minX, imageRect.minX), imageRect.maxX - rect.width)
+            rect.origin.y = min(max(rect.minY, imageRect.minY), imageRect.maxY - rect.height)
+        case let .resize(fixed, _):
+            let sx: CGFloat = point.x >= fixed.x ? 1 : -1, sy: CGFloat = point.y >= fixed.y ? 1 : -1
+            let availableW = sx > 0 ? imageRect.maxX - fixed.x : fixed.x - imageRect.minX
+            let availableH = sy > 0 ? imageRect.maxY - fixed.y : fixed.y - imageRect.minY
+            var w = min(abs(point.x - fixed.x), availableW), h = min(abs(point.y - fixed.y), availableH)
+            if let aspect = cropAspect {
+                w = min(max(w, h * aspect), availableW, availableH * aspect)
+                h = w / aspect
+            }
+            w = max(w, 20)
+            h = max(h, cropAspect.map { 20 / $0 } ?? 20)
+            rect = CGRect(x: sx > 0 ? fixed.x : fixed.x - w, y: sy > 0 ? fixed.y : fixed.y - h, width: w, height: h)
+        }
+        let unit = NormalizedRect(
+            x: (rect.minX - imageRect.minX) / imageRect.width, y: (rect.minY - imageRect.minY) / imageRect.height,
+            width: rect.width / imageRect.width, height: rect.height / imageRect.height
+        ).clampedToUnit()
+        cropRect = unit
+        updateCropOverlay()
+        onCropChange?(unit)
+    }
+
+    private func updateCropOverlay() {
+        withoutAnimation {
+            guard imageRect.width > 0 else { return }
+            if isCropping {
+                let crop = cropViewRect
+                let shade = CGMutablePath()
+                shade.addRect(imageRect)
+                shade.addRect(crop)
+                cropShadeLayer.path = shade
+                cropShadeLayer.fillColor = NSColor.black.withAlphaComponent(0.55).cgColor
+
+                let frame = CGMutablePath()
+                frame.addRect(crop)
+                for i in 1...2 {
+                    let x = crop.minX + crop.width * CGFloat(i) / 3, y = crop.minY + crop.height * CGFloat(i) / 3
+                    frame.move(to: CGPoint(x: x, y: crop.minY)); frame.addLine(to: CGPoint(x: x, y: crop.maxY))
+                    frame.move(to: CGPoint(x: crop.minX, y: y)); frame.addLine(to: CGPoint(x: crop.maxX, y: y))
+                }
+                // L-shaped corner handles.
+                let arm: CGFloat = 16
+                for (i, corner) in cropCorners(crop).enumerated() {
+                    let dx: CGFloat = (i == 0 || i == 3) ? arm : -arm, dy: CGFloat = i < 2 ? arm : -arm
+                    frame.move(to: CGPoint(x: corner.x + dx, y: corner.y))
+                    frame.addLine(to: corner)
+                    frame.addLine(to: CGPoint(x: corner.x, y: corner.y + dy))
+                }
+                cropFrameLayer.path = frame
+                cropFrameLayer.lineWidth = 1.5
+                cropFrameLayer.lineDashPattern = nil
+                return
+            }
+
+            // Safe zones over the (already cropped) frame.
+            let shade = CGMutablePath(), outline = CGMutablePath()
+            for zone in safeZones {
+                switch zone {
+                case let .gridWindow(window):
+                    let rect = CGRect(x: imageRect.minX + window.x * imageRect.width, y: imageRect.minY + window.y * imageRect.height,
+                                      width: window.width * imageRect.width, height: window.height * imageRect.height)
+                    shade.addRect(imageRect)
+                    shade.addRect(rect)
+                    outline.addRect(rect)
+                case let .interfaceBands(top, bottom):
+                    shade.addRect(CGRect(x: imageRect.minX, y: imageRect.minY, width: imageRect.width, height: imageRect.height * top))
+                    shade.addRect(CGRect(x: imageRect.minX, y: imageRect.maxY - imageRect.height * bottom,
+                                         width: imageRect.width, height: imageRect.height * bottom))
+                }
+            }
+            cropShadeLayer.path = safeZones.isEmpty ? nil : shade
+            cropShadeLayer.fillColor = NSColor.black.withAlphaComponent(0.35).cgColor
+            cropFrameLayer.path = safeZones.isEmpty ? nil : outline
+            cropFrameLayer.lineWidth = 1
+            cropFrameLayer.lineDashPattern = [5, 4]
+        }
     }
 
     private func withoutAnimation(_ body: () -> Void) {

@@ -42,10 +42,21 @@ final class AlbumSession {
     @ObservationIgnored var pointsPerPixel: Double = 1
     /// Oriented full-resolution size of the photo on the canvas.
     @ObservationIgnored var currentPhotoSize: CGSize = .zero
+    /// Full-resolution size of the frame on the canvas (the crop's size on outputs); placements are relative to it.
+    @ObservationIgnored var currentFrameSize: CGSize = .zero
     /// Screen-sized image of the current photo (for contrast checks).
     var currentPreview: CGImage?
     /// Which adaptive variant each layer shows on the current photo.
     var layerVariants: [UUID: VariantChoice] = [:]
+
+    // Crop
+    var isCropping = false
+    /// Live crop rect while in crop mode (unit space of the photo).
+    var pendingCrop: NormalizedRect?
+    /// Ratio chosen in crop mode, overriding the recipe's preset for this photo.
+    var cropPresetID: String?
+    var showSafeZones = true
+    var presets: [SizePreset] = SizePreset.builtIn
 
     // Review
     private(set) var reviewIssues: [String: Set<ReviewIssue>] = [:]
@@ -157,6 +168,93 @@ final class AlbumSession {
         direction = index >= editor.currentIndex ? 1 : -1
         editor.select(index)
         selection = editor.currentPhoto.map { [$0.relativePath] } ?? []
+    }
+
+    // MARK: - Crop
+
+    /// The recipe the canvas is editing, if any.
+    var currentRecipe: Recipe? { editor.currentRecipe }
+
+    var currentPhotoAspect: Double {
+        currentPhotoSize.height > 0 ? currentPhotoSize.width / currentPhotoSize.height : 1.5
+    }
+
+    /// The crop that applies to the current photo on the current output.
+    var currentCrop: CropSpec? {
+        guard let key = editor.currentPhoto?.relativePath else { return nil }
+        return editor.project.effectiveCrop(for: key, recipe: currentRecipe, photoAspect: currentPhotoAspect, presets: presets)
+    }
+
+    func preset(id: String?) -> SizePreset? {
+        id.flatMap { id in presets.first { $0.id == id } }
+    }
+
+    /// Pixel aspect the crop is locked to in crop mode (`nil` = free).
+    var cropAspect: Double? {
+        preset(id: cropPresetID ?? currentCrop?.presetID ?? currentRecipe?.cropPresetID)?.aspect
+    }
+
+    /// Enters crop mode. On the master view this switches to the first recipe that crops.
+    func beginCrop() {
+        if currentRecipe == nil {
+            guard let recipe = editor.recipes.first(where: { $0.cropPresetID != nil }) ?? editor.recipes.first else { return }
+            editor.target = .output(recipe.id)
+        }
+        cropPresetID = currentCrop?.presetID ?? currentRecipe?.cropPresetID
+        pendingCrop = currentCrop?.rect ?? .full
+        selectedLayerID = nil
+        zoom = .fit
+        isCropping = true
+    }
+
+    /// Switches the crop ratio while in crop mode; the rect restarts centred.
+    func chooseCropPreset(_ id: String?) {
+        cropPresetID = id
+        if let aspect = preset(id: id)?.aspect {
+            pendingCrop = CropMath.crop(aspect: aspect, photoAspect: currentPhotoAspect)
+        } else {
+            pendingCrop = .full
+        }
+    }
+
+    func commitCrop() {
+        defer { isCropping = false; pendingCrop = nil }
+        guard let key = editor.currentPhoto?.relativePath, let recipe = currentRecipe, let rect = pendingCrop else { return }
+        editor.setCrop(CropSpec(presetID: cropPresetID, rect: rect), for: key, recipeID: recipe.id,
+                       photoAspect: currentPhotoAspect)
+    }
+
+    func cancelCrop() {
+        isCropping = false
+        pendingCrop = nil
+    }
+
+    /// Crops many photos for the current output: centred, or around the subject (Vision saliency).
+    func applyCrop(presetID: String?, to keys: [String], smart: Bool) async {
+        guard let recipe = currentRecipe, let aspect = preset(id: presetID ?? recipe.cropPresetID)?.aspect else { return }
+        let photos = editor.photos.filter { keys.contains($0.relativePath) }
+        var crops: [String: CropSpec] = [:], aspects: [String: Double] = [:]
+        reviewProgress = 0
+        defer { reviewProgress = nil }
+        for (index, photo) in photos.enumerated() {
+            guard let info = try? ImageSourceInfo(url: photo.url), info.orientedSize.height > 0 else { continue }
+            let photoAspect = info.orientedSize.width / info.orientedSize.height
+            var focus: NormalizedRect?
+            if smart, let thumb = try? await thumbnails.image(for: photo.url, maxPixel: Self.thumbnailPixels) {
+                let image = thumb.cgImage
+                focus = await Task.detached(priority: .userInitiated) { ReviewAnalyzer.salientRegion(in: image) }.value
+            }
+            crops[photo.relativePath] = CropSpec(presetID: presetID ?? recipe.cropPresetID,
+                                                 rect: CropMath.crop(aspect: aspect, photoAspect: photoAspect, focus: focus))
+            aspects[photo.relativePath] = photoAspect
+            reviewProgress = Double(index + 1) / Double(max(photos.count, 1))
+        }
+        editor.setCrops(crops, recipeID: recipe.id, photoAspects: aspects)
+    }
+
+    func resetCrops(_ keys: [String]) {
+        guard let recipe = currentRecipe else { return }
+        editor.clearCrops(keys, recipeID: recipe.id)
     }
 
     // MARK: - Zoom
@@ -304,7 +402,29 @@ final class AlbumSession {
                                       aspect: library.aspect(of: layer, tokens: textTokens, variant: variant),
                                       tone: library.luminance(of: layer, variant: variant))
             }
-            let issues = ReviewAnalyzer.issues(preview: image, layers: regions, faces: detected)
+            var issues = ReviewAnalyzer.issues(preview: image, layers: regions, faces: detected)
+            // Each cropping output is checked in its own frame.
+            let photoAspect = Double(image.width) / Double(max(image.height, 1))
+            for recipe in editor.recipes where recipe.cropPresetID != nil {
+                guard let crop = editor.project.effectiveCrop(for: key, recipe: recipe, photoAspect: photoAspect, presets: presets),
+                      let cropped = image.cropping(to: CGRect(
+                          x: crop.rect.x * Double(image.width), y: crop.rect.y * Double(image.height),
+                          width: crop.rect.width * Double(image.width), height: crop.rect.height * Double(image.height)).integral)
+                else { continue }
+                let cropFrame = CGSize(width: cropped.width, height: cropped.height)
+                let cropRegions = editor.project.effectiveLayers(for: key, recipe: recipe, sets: editor.sets)
+                    .filter(\.isVisible)
+                    .map { layer in
+                        LayerRegion.of(layer, frame: cropFrame, aspect: library.aspect(of: layer, tokens: textTokens),
+                                       tone: library.luminance(of: layer, variant: .primary))
+                    }
+                let cropFaces = detected.compactMap { face -> NormalizedRect? in
+                    let f = NormalizedRect(x: (face.x - crop.rect.x) / crop.rect.width, y: (face.y - crop.rect.y) / crop.rect.height,
+                                           width: face.width / crop.rect.width, height: face.height / crop.rect.height)
+                    return f.x + f.width > 0 && f.y + f.height > 0 && f.x < 1 && f.y < 1 ? f : nil
+                }
+                issues.formUnion(ReviewAnalyzer.issues(preview: cropped, layers: cropRegions, faces: cropFaces))
+            }
             let stored = issues.isEmpty ? nil : issues
             if reviewIssues[key] != stored { reviewIssues[key] = stored }
             reviewProgress = Double(index + 1) / Double(photos.count)

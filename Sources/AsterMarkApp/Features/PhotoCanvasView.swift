@@ -32,12 +32,14 @@ struct PhotoCanvasView: View {
 
     var body: some View {
         ZStack {
+            let display = display
             InteractiveCanvas(
                 session: session,
-                photo: preview?.cgImage,
-                photoSize: preview?.originalSize ?? .zero,
+                photo: display?.image,
+                photoSize: display?.size ?? .zero,
                 layers: canvasLayers,
                 canvasColor: background.nsColor,
+                safeZones: display?.zones ?? [],
                 onNeedsResolution: { pixels in
                     if pixels > (preview.map { Int(max($0.pixelSize.width, $0.pixelSize.height)) } ?? 0) {
                         neededPixels = pixels
@@ -79,7 +81,27 @@ struct PhotoCanvasView: View {
 
     private var renderInputs: RenderInputs {
         RenderInputs(layers: currentLayers, url: preview == nil ? nil : session.editor.currentPhoto?.url,
-                     previewSize: preview?.pixelSize ?? .zero, tokens: tokens, library: model.library.watermarks)
+                     previewSize: display?.pixelSize ?? .zero, tokens: tokens, library: model.library.watermarks)
+    }
+
+    /// What the canvas shows: the full photo (master view, crop mode) or the output's crop.
+    private var display: CanvasDisplay? {
+        guard let preview else { return nil }
+        let crop = session.isCropping ? nil : session.currentCrop
+        guard let crop, crop.rect != .full else {
+            return CanvasDisplay(image: preview.cgImage, size: preview.originalSize, zones: [])
+        }
+        let r = crop.rect
+        let pixelRect = CGRect(x: r.x * preview.pixelSize.width, y: r.y * preview.pixelSize.height,
+                               width: r.width * preview.pixelSize.width, height: r.height * preview.pixelSize.height).integral
+        guard let cropped = preview.cgImage.cropping(to: pixelRect) else {
+            return CanvasDisplay(image: preview.cgImage, size: preview.originalSize, zones: [])
+        }
+        let size = CGSize(width: preview.originalSize.width * r.width, height: preview.originalSize.height * r.height)
+        let zones = session.showSafeZones
+            ? SafeZone.zones(forPreset: crop.presetID ?? session.currentRecipe?.cropPresetID, frameAspect: size.width / size.height)
+            : []
+        return CanvasDisplay(image: cropped, size: size, zones: zones)
     }
 
     private var canvasLayers: [CanvasLayerModel] {
@@ -157,15 +179,16 @@ struct PhotoCanvasView: View {
     /// Builds the bitmap each layer shows on this photo: text at the right size, the adaptive
     /// variant chosen from the photo under it, and tiles pre-rendered for the whole frame.
     private func renderLayers() async {
-        guard let preview else { rendered = [:]; return }
+        guard let display else { rendered = [:]; return }
         let library = model.library
-        let frame = preview.pixelSize
+        let frame = display.pixelSize
+        let background = display.image
         let tokens = tokens
         var result: [UUID: LayerRender] = [:]
 
         for layer in currentLayers {
             if layer.tile != nil {
-                let renderable = library.renderLayers([layer], frame: frame, tokens: tokens, background: preview.cgImage)
+                let renderable = library.renderLayers([layer], frame: frame, tokens: tokens, background: background)
                 let image = await Task.detached(priority: .userInitiated) {
                     let base = CIImage(color: .clear).cropped(to: CGRect(origin: .zero, size: frame))
                     let composite = Compositor.render(base: base, layers: renderable, spec: RenderSpec())
@@ -178,7 +201,7 @@ struct PhotoCanvasView: View {
                                                aspect: TextRenderer.aspect(text, tokens: tokens) ?? 4, variant: .primary)
             } else if let watermark = library.watermark(id: layer.watermarkID) {
                 let region = WatermarkLibrary.normalizedRegion(of: layer, frame: frame, aspect: watermark.aspect)
-                let variant = library.resolvedVariant(for: layer, background: Luminance.mean(of: preview.cgImage, in: region))
+                let variant = library.resolvedVariant(for: layer, background: Luminance.mean(of: background, in: region))
                 let url = library.fileURL(for: watermark, variant: variant)
                 let image = try? await model.previews.image(for: url, maxPixel: 1024).cgImage
                 result[layer.id] = LayerRender(image: image, aspect: library.aspect(of: layer, tokens: tokens, variant: variant),
@@ -189,6 +212,15 @@ struct PhotoCanvasView: View {
         rendered = result
         session.layerVariants = result.mapValues(\.variant)
     }
+}
+
+private struct CanvasDisplay {
+    let image: CGImage
+    /// Full-resolution size of what's shown (the crop's size on outputs).
+    let size: CGSize
+    let zones: [SafeZone]
+
+    var pixelSize: CGSize { CGSize(width: image.width, height: image.height) }
 }
 
 private struct LayerRender {
@@ -217,6 +249,7 @@ private struct InteractiveCanvas: NSViewRepresentable {
     let photoSize: CGSize
     let layers: [CanvasLayerModel]
     let canvasColor: NSColor
+    let safeZones: [SafeZone]
     let onNeedsResolution: (Int) -> Void
 
     func makeNSView(context: Context) -> CanvasView {
@@ -228,11 +261,13 @@ private struct InteractiveCanvas: NSViewRepresentable {
         }
         view.onZoom = { zoom in session.zoom = zoom }
         view.onScale = { scale in session.pointsPerPixel = scale }
+        view.onCropChange = { rect in session.pendingCrop = rect }
         return view
     }
 
     func updateNSView(_ view: CanvasView, context: Context) {
         view.onNeedsResolution = onNeedsResolution
+        session.currentFrameSize = photoSize
         view.canvasColor = canvasColor
         view.photoSize = photoSize
         view.photo = photo
@@ -241,6 +276,10 @@ private struct InteractiveCanvas: NSViewRepresentable {
         view.showHandles = session.showHandles
         view.layers = layers
         view.selectedID = session.selectedLayerID
+        view.cropAspect = session.cropAspect
+        view.cropRect = session.pendingCrop ?? .full
+        view.isCropping = session.isCropping
+        view.safeZones = safeZones
     }
 }
 

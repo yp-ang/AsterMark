@@ -30,6 +30,8 @@ final class AppModel {
     let previews = PreviewCache(costLimit: 768 * 1024 * 1024)
 
     private(set) var recents: [ProjectSummary] = []
+    /// Social size presets: built-ins merged with the user's presets.json.
+    private(set) var presets: [SizePreset] = SizePreset.builtIn
     private(set) var session: AlbumSession?
     private(set) var isOpening = false
     var alert: AppAlert?
@@ -47,6 +49,7 @@ final class AppModel {
         self.paths = paths
         store = ProjectStore(directory: paths.projects)
         library = WatermarkLibrary(directory: paths.library)
+        presets = SizePreset.load(userFile: paths.presetsFile)
 
         let names: [Notification.Name] = [.NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidUndoChange,
                                           .NSUndoManagerDidRedoChange]
@@ -159,6 +162,8 @@ final class AppModel {
             }
         )
         session.editor.sets = library.sets
+        session.editor.recipes = library.recipes
+        session.presets = presets
         self.session = session
         UserDefaults.standard.set(opened.project.id.uuidString, forKey: Self.lastProjectKey)
         log.notice("Opened album \(opened.project.displayName, privacy: .public) with \(opened.photos.count) photos")
@@ -301,10 +306,10 @@ final class AppModel {
 
     /// Moves the selected watermark by screen points (converted to photo pixels at the current zoom).
     func nudgeSelected(dx: Double, dy: Double) {
-        guard let (session, key, layer) = selectedLayerContext, session.currentPhotoSize.width > 0 else { return }
+        guard let (session, key, layer) = selectedLayerContext, session.currentFrameSize.width > 0 else { return }
         let scale = max(session.pointsPerPixel, 0.0001)
         session.editor.moveLayer(layer.id, for: key, by: CGVector(dx: dx / scale, dy: dy / scale),
-                                 frame: session.currentPhotoSize, aspect: aspect(of: layer))
+                                 frame: session.currentFrameSize, aspect: aspect(of: layer))
     }
 
     func anchorSelected(_ anchor: Anchor) {
@@ -330,7 +335,13 @@ final class AppModel {
 
     func syncSets() {
         session?.editor.sets = library.sets
+        session?.editor.recipes = library.recipes
         session?.reviewAll()
+    }
+
+    func reloadPresets() {
+        presets = SizePreset.load(userFile: paths.presetsFile)
+        session?.presets = presets
     }
 
     // MARK: - Errors
