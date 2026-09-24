@@ -65,12 +65,15 @@ struct GoldenTests {
         }
         let reference = try #require(Fixtures.loadCGImage(url))
         #expect(reference.width == rendered.width && reference.height == rendered.height, "\(name): size changed")
-        let (worst, outliers) = Self.difference(rendered, reference)
-        // GPU rounding differs slightly between Macs: allow ±3/255, and ≤ 0.5% of pixels beyond that.
+        // Resampling + sharpening is the most sensitive to GPU precision (GitHub's virtual Macs
+        // differ by up to ~8/255 there); exact sizes and crops are checked elsewhere.
+        let tolerance = name.contains("resize") ? 8 : 3
+        let (worst, outliers) = Self.difference(rendered, reference, tolerance: tolerance)
+        // GPU rounding differs slightly between Macs: allow ±tolerance, and ≤ 0.5% of pixels beyond that.
         #expect(outliers <= rendered.width * rendered.height / 200, "\(name): \(outliers) pixels differ (worst \(worst))")
     }
 
-    static func difference(_ a: CGImage, _ b: CGImage) -> (worst: Int, outliers: Int) {
+    static func difference(_ a: CGImage, _ b: CGImage, tolerance: Int) -> (worst: Int, outliers: Int) {
         let ca = Fixtures.context(width: a.width, height: a.height), cb = Fixtures.context(width: a.width, height: a.height)
         ca.draw(a, in: CGRect(x: 0, y: 0, width: a.width, height: a.height))
         cb.draw(b, in: CGRect(x: 0, y: 0, width: a.width, height: a.height))
@@ -81,7 +84,7 @@ struct GoldenTests {
                 let o = y * ca.bytesPerRow + x * 4
                 let d = (0..<3).map { abs(Int(pa[o + $0]) - Int(pb[o + $0])) }.max()!
                 worst = max(worst, d)
-                if d > 3 { outliers += 1 }
+                if d > tolerance { outliers += 1 }
             }
         }
         return (worst, outliers)
