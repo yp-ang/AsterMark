@@ -93,6 +93,19 @@ public actor PreviewCache {
         }
     }
 
+    /// Forgets every cached size of one file (call when the file changed on disk).
+    public func remove(url: URL) {
+        for key in entries.keys where key.url == url {
+            totalCost -= entries[key]?.image.byteCost ?? 0
+            entries[key] = nil
+        }
+        for key in inFlight.keys where key.url == url {
+            inFlight[key]?.cancel()
+            inFlight[key] = nil
+            prefetchKeys.remove(key)
+        }
+    }
+
     public func removeAll() {
         for task in inFlight.values { task.cancel() }
         inFlight.removeAll()

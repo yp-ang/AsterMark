@@ -173,8 +173,31 @@ for group in groups where !group.urls.isEmpty {
     ))
 }
 
+// MARK: - Album opening (PERF-2)
+
+if let directory {
+    var photos: [PhotoRef] = []
+    let scan = try milliseconds {
+        photos = AlbumScanner.sorted(try AlbumScanner.scan(folder: directory, recursive: false), by: .name)
+    }
+    let visible = Array(photos.prefix(12))
+    let firstThumbs = milliseconds {
+        DispatchQueue.concurrentPerform(iterations: visible.count) { i in
+            _ = try? loader.preview(url: visible[i].url, maxPixel: 256)
+        }
+    }
+    let all = milliseconds {
+        DispatchQueue.concurrentPerform(iterations: photos.count) { i in
+            _ = try? loader.preview(url: photos[i].url, maxPixel: 256)
+        }
+    }
+    print(String(format: "\nAlbum: %d photos · scan %.0f ms · first 12 thumbnails %.0f ms · all thumbnails %.0f ms",
+                 photos.count, scan, firstThumbs, all))
+}
+
 print("""
 
 Budgets (M1 baseline): PERF-3 cold photo switch < 200 ms for 45 MP (≈ Preview 2048) · \
-PERF-4 export < 400 ms per 45 MP image (≈ 1 / throughput) · PERF-5 memory bounded.
+PERF-4 export < 400 ms per 45 MP image (≈ 1 / throughput) · PERF-5 memory bounded · \
+PERF-2 1,000-photo album: first thumbnails < 300 ms, all < 3 s.
 """)

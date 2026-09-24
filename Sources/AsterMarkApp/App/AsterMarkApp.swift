@@ -1,22 +1,28 @@
+import AsterCore
 import SwiftUI
 
 @main
 struct AsterMarkApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @State private var model = AppModel.shared
 
     var body: some Scene {
-        WindowGroup("AsterMark") {
+        Window("AsterMark", id: "main") {
             MainView()
-                .frame(minWidth: 900, minHeight: 600)
+                .environment(model)
+                .frame(minWidth: 960, minHeight: 620)
+                .task { await model.start() }
         }
         .windowToolbarStyle(.unified)
         .commands {
+            AppCommands(model: model)
             SidebarCommands()
             InspectorCommands()
         }
 
         Settings {
             SettingsView()
+                .environment(model)
         }
     }
 }
@@ -28,7 +34,101 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
     }
 
+    /// Folders or images dropped on the Dock icon, or opened with "Open With ▸ AsterMark".
+    func application(_ application: NSApplication, open urls: [URL]) {
+        Task { @MainActor in await AppModel.shared.handleDroppedURLs(urls) }
+    }
+
+    /// Writes any pending autosave before quitting.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task { @MainActor in
+            await AppModel.shared.flush()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+}
+
+/// File, Edit and Photo menu commands.
+struct AppCommands: Commands {
+    let model: AppModel
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("Open Folder…") { model.showOpenPanel() }
+                .keyboardShortcut("o")
+            Menu("Open Recent") {
+                ForEach(model.recents) { summary in
+                    Button(summary.displayName) { Task { await model.open(summary) } }
+                }
+                if !model.recents.isEmpty {
+                    Divider()
+                }
+                Button("Clear Menu") {
+                    Task { for summary in model.recents { await model.forget(summary) } }
+                }
+                .disabled(model.recents.isEmpty)
+            }
+            Divider()
+            Button("Import Watermark…") { model.showImportPanel() }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+            Button("Close Album") { Task { await model.closeAlbum() } }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
+                .disabled(model.session == nil)
+        }
+
+        // Album edits use the app's own undo manager (see AppModel.undoManager).
+        CommandGroup(replacing: .undoRedo) {
+            let _ = model.undoRevision
+            Button(model.undoManager.canUndo ? "Undo \(model.undoManager.undoActionName)" : "Undo") {
+                model.undoManager.undo()
+            }
+            .keyboardShortcut("z")
+            .disabled(!model.undoManager.canUndo)
+            Button(model.undoManager.canRedo ? "Redo \(model.undoManager.redoActionName)" : "Redo") {
+                model.undoManager.redo()
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(!model.undoManager.canRedo)
+        }
+
+        CommandMenu("Photo") {
+            let session = model.session
+            Button("Next Photo  →") { session?.goToNext() }
+                .disabled(session == nil)
+            Button("Previous Photo  ←") { session?.goToPrevious() }
+                .disabled(session == nil)
+            Divider()
+            Button("Apply Layout to All Photos") { model.requestApplyToAll() }
+                .keyboardShortcut("d")
+                .disabled(session == nil)
+            Button("Copy Layout") {
+                if let key = session?.editor.currentPhoto?.relativePath { session?.editor.copyLayout(from: key) }
+            }
+            .keyboardShortcut("c", modifiers: [.command, .shift])
+            .disabled(session?.editor.currentPhoto == nil)
+            Button("Paste Layout") {
+                if let session { session.editor.pasteLayout(to: session.targetKeys) }
+            }
+            .keyboardShortcut("v", modifiers: [.command, .shift])
+            .disabled(session?.editor.clipboard == nil)
+            Button("Reset to Album Default") {
+                if let session { session.editor.resetToDefault(session.targetKeys) }
+            }
+            .disabled(session == nil)
+            Divider()
+            Button("Exclude from Export  X") {
+                if let session {
+                    let keys = session.targetKeys
+                    let excluded = keys.allSatisfy { session.editor.project.edit(for: $0).isExcluded }
+                    session.editor.setExcluded(!excluded, for: keys)
+                }
+            }
+            .disabled(session == nil)
+        }
     }
 }

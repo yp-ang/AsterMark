@@ -127,6 +127,55 @@ public final class AlbumEditor {
         }
     }
 
+    /// Adds a watermark layer. On the master target it goes to the photo's own layout when it has
+    /// one, otherwise to the album default (so it appears on every photo). On an output target it
+    /// goes to that photo's output layout.
+    public func addLayer(_ layer: Layer, for key: String?) {
+        change("Add Watermark") { project in
+            let recipe = currentRecipe
+            switch target {
+            case .master:
+                if let key, var layers = project.storedLayers(for: key, target: .master) {
+                    layers.append(layer)
+                    project.setStoredLayers(layers, for: key, target: .master)
+                } else {
+                    project.defaultLayers.append(layer)
+                }
+            case .output:
+                guard let key else { return }
+                let layers = project.effectiveLayers(for: key, recipe: recipe, sets: sets) + [layer]
+                project.setStoredLayers(layers, for: key, target: target)
+            }
+        }
+    }
+
+    /// Removes a layer from wherever the photo's shown layout comes from (mirrors `addLayer`).
+    public func removeLayer(_ layerID: UUID, for key: String?) {
+        change("Remove Watermark") { project in
+            let recipe = currentRecipe
+            switch target {
+            case .master:
+                if let key, var layers = project.storedLayers(for: key, target: .master) {
+                    layers.removeAll { $0.id == layerID }
+                    project.setStoredLayers(layers, for: key, target: .master)
+                } else {
+                    project.defaultLayers.removeAll { $0.id == layerID }
+                }
+            case .output:
+                guard let key else { return }
+                let layers = project.effectiveLayers(for: key, recipe: recipe, sets: sets).filter { $0.id != layerID }
+                project.setStoredLayers(layers, for: key, target: target)
+            }
+        }
+    }
+
+    /// Drops edits for photos that are no longer in the folder.
+    public func forgetEdits(_ keys: [String]) {
+        change("Forget Edits") { project in
+            for key in keys { project.edits[key] = nil }
+        }
+    }
+
     public func copyLayout(from key: String) {
         clipboard = layers(for: key)
     }

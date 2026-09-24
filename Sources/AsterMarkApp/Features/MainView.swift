@@ -1,110 +1,152 @@
+import AsterCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Window shell: sidebar (albums, watermarks) · canvas · inspector.
-/// Phase 0 placeholder — real content arrives in Phase 3.
+/// Window shell: sidebar (albums, watermarks, layouts) · canvas + filmstrip · inspector.
 struct MainView: View {
+    @Environment(AppModel.self) private var model
     @State private var isInspectorPresented = true
     @State private var isDropTargeted = false
-    @State private var albumURL: URL?
+    @State private var keyMonitor = KeyMonitor()
 
     var body: some View {
+        @Bindable var model = model
+
         NavigationSplitView {
-            List {
-                Section("Albums") {
-                    if let albumURL {
-                        Label(albumURL.lastPathComponent, systemImage: "photo.stack")
-                    } else {
-                        Text("No albums").foregroundStyle(.secondary)
-                    }
-                }
-                Section("Watermarks") {
-                    Text("No watermarks").foregroundStyle(.secondary)
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 300)
+            SidebarView()
+                .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
         } detail: {
-            CanvasPlaceholder(albumURL: albumURL, isDropTargeted: isDropTargeted)
-                .onDrop(of: [.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
+            detail
                 .inspector(isPresented: $isInspectorPresented) {
-                    InspectorPlaceholder()
-                        .inspectorColumnWidth(min: 220, ideal: 260, max: 340)
+                    InspectorView()
+                        .inspectorColumnWidth(min: 240, ideal: 270, max: 360)
                 }
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Button("Previous", systemImage: "chevron.left") {}
-                    .disabled(true)
-                Button("Next", systemImage: "chevron.right") {}
-                    .disabled(true)
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button("Crop", systemImage: "crop") {}
-                    .disabled(true)
-                Button("Apply to All", systemImage: "square.stack.3d.down.right") {}
-                    .disabled(true)
-                Button("Export", systemImage: "square.and.arrow.up") {}
-                    .disabled(true)
-                Button("Inspector", systemImage: "sidebar.trailing") {
-                    isInspectorPresented.toggle()
+        .navigationTitle(model.session?.title ?? "AsterMark")
+        .navigationSubtitle(model.session?.positionText ?? "")
+        .toolbar { toolbar }
+        .dropDestination(for: URL.self) { urls, _ in
+            Task { await model.handleDroppedURLs(urls) }
+            return true
+        } isTargeted: { isDropTargeted = $0 }
+        .overlay { if isDropTargeted { DropHighlight() } }
+        .alert(item: $model.alert) { alert in
+            Alert(title: Text(alert.title), message: Text(alert.message))
+        }
+        .confirmationDialog(
+            applyToAllTitle,
+            isPresented: $model.isConfirmingApplyToAll
+        ) {
+            Button("Keep Custom Layouts") { model.applyToAll(replacingOverrides: false) }
+            Button("Replace All") { model.applyToAll(replacingOverrides: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Some photos have their own watermark layout. Keep them, or replace every photo with this layout?")
+        }
+        .onAppear { keyMonitor.install(model: model) }
+        .onDisappear { keyMonitor.remove() }
+    }
+
+    private var applyToAllTitle: String {
+        let count = model.session?.editor.overrideCount ?? 0
+        return "\(count) photo\(count == 1 ? " has" : "s have") a custom layout"
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        if let session = model.session {
+            VStack(spacing: 0) {
+                if !session.missingKeys.isEmpty {
+                    MissingPhotosBanner(session: session)
                 }
+                if session.editor.photos.isEmpty {
+                    ContentUnavailableView(
+                        "No photos in this folder",
+                        systemImage: "photo.badge.exclamationmark",
+                        description: Text("AsterMark reads JPEG, PNG and TIFF files. Try including subfolders in the inspector.")
+                    )
+                } else {
+                    PhotoCanvasView(session: session)
+                }
+                Divider()
+                FilmstripView(session: session, thumbnails: model.thumbnails)
+                    .frame(height: 96)
             }
+        } else {
+            EmptyAlbumView(isOpening: model.isOpening)
         }
     }
 
-    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else { return false }
-        _ = provider.loadObject(ofClass: URL.self) { url, _ in
-            guard let url, url.hasDirectoryPath else { return }
-            Task { @MainActor in albumURL = url }
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
+            Button("Previous Photo", systemImage: "chevron.left") { model.session?.goToPrevious() }
+                .disabled((model.session?.editor.currentIndex ?? 0) == 0)
+            Button("Next Photo", systemImage: "chevron.right") { model.session?.goToNext() }
+                .disabled(model.session.map { $0.editor.currentIndex >= $0.editor.photos.count - 1 } ?? true)
         }
-        return true
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button("Crop", systemImage: "crop") {}
+                .disabled(true)
+                .help("Crop for Instagram and Facebook (coming in Phase 7)")
+            Button("Apply to All", systemImage: "square.stack.3d.down.right") { model.requestApplyToAll() }
+                .disabled(model.session?.editor.currentPhoto == nil)
+                .help("Use this photo's watermark layout on every photo (⌘D)")
+            Button("Export", systemImage: "square.and.arrow.up") {}
+                .disabled(true)
+                .help("Export recipes (coming in Phase 8)")
+            Button("Inspector", systemImage: "sidebar.trailing") { isInspectorPresented.toggle() }
+        }
     }
 }
 
-private struct CanvasPlaceholder: View {
-    let albumURL: URL?
-    let isDropTargeted: Bool
+private struct EmptyAlbumView: View {
+    @Environment(AppModel.self) private var model
+    let isOpening: Bool
 
     var body: some View {
-        ZStack {
-            Color(nsColor: .underPageBackgroundColor)
-                .ignoresSafeArea()
-
-            if let albumURL {
-                ContentUnavailableView(
-                    albumURL.lastPathComponent,
-                    systemImage: "photo.on.rectangle.angled",
-                    description: Text("Photo browsing arrives in Phase 3.")
-                )
+        ContentUnavailableView {
+            Label("Drop a folder of photos here", systemImage: "photo.stack")
+        } description: {
+            Text("AsterMark never changes your originals.")
+        } actions: {
+            if isOpening {
+                ProgressView().controlSize(.small)
             } else {
-                ContentUnavailableView {
-                    Label("Drop a folder of photos here", systemImage: "photo.stack")
-                } description: {
-                    Text("AsterMark never changes your originals.")
-                }
+                Button("Open Folder…") { model.showOpenPanel() }
+                    .keyboardShortcut(.defaultAction)
             }
         }
-        .overlay {
-            if isDropTargeted {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.accentColor, lineWidth: 2)
-                    .padding(12)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .underPageBackgroundColor))
     }
 }
 
-private struct InspectorPlaceholder: View {
+private struct MissingPhotosBanner: View {
+    let session: AlbumSession
+
     var body: some View {
-        Form {
-            Section("Watermark") {
-                Text("Select a watermark layer to adjust opacity, size and position.")
-                    .foregroundStyle(.secondary)
-            }
+        let count = session.missingKeys.count
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+            Text("\(count) edited photo\(count == 1 ? " is" : "s are") no longer in this folder.")
+                .font(.callout)
+            Spacer()
+            Button("Forget Edits") { session.forgetMissing() }
+                .controlSize(.small)
         }
-        .formStyle(.grouped)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+}
+
+private struct DropHighlight: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(Color.accentColor, lineWidth: 3)
+            .padding(8)
+            .allowsHitTesting(false)
+            .transition(.opacity)
     }
 }

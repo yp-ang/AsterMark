@@ -2,7 +2,7 @@
 
 A fast, Mac-native watermarking app for photographers. Apply your logo to a whole shoot in one click, fix the exceptions with a drag, crop for Instagram and Facebook, and export every deliverable in one pass. Originals are never modified.
 
-> Status: **Phase 2 complete** (data model, projects, undo). See [`docs/`](docs/README.md) for the spec and roadmap.
+> Status: **Phase 3 complete**: open albums, browse photos, manage watermarks and layouts. Dragging and resizing watermarks on the photo arrives in Phase 4. See [`docs/`](docs/README.md) for the spec and roadmap.
 
 ## Requirements
 
@@ -27,6 +27,13 @@ Open in Xcode (optional): `make open-xcode`.
 xcrun notarytool store-credentials AsterMarkNotary   # once
 make release SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=AsterMarkNotary
 ```
+
+## Try it
+
+1. `make run`
+2. Drop a folder of JPEG/PNG/TIFF photos onto the window (or File ▸ Open Folder…, ⌘O).
+3. Drop a transparent PNG logo onto the **Watermarks** sidebar, then drag it onto the photo. It appears on every photo.
+4. Use ← / → to move between photos and X to exclude one. ⌘D applies the current photo's layout to all photos.
 
 ## Project layout
 
